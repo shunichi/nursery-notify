@@ -16,6 +16,7 @@
     "@babel/plugin-proposal-class-properties": "^7.12.1",
     "@babel/preset-env": "^7.12.11",
     "@babel/preset-typescript": "^7.12.7",
+    "@types/js-cookie": "^2.2.6",
     "@types/uuid": "^8.3.0",
     "@typescript-eslint/eslint-plugin": "^4.14.1",
     "@typescript-eslint/parser": "^4.14.1",
@@ -31,7 +32,11 @@
     "webpack-cli": "^4.4.0"
   },
   "dependencies": {
+    "axios": "^0.21.1",
+    "core-js": "^3.8.3",
     "firebase": "^8.2.4",
+    "js-cookie": "^2.2.1",
+    "regenerator-runtime": "^0.13.7",
     "uuid": "^8.3.2"
   }
 }

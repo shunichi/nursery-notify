@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Welcome to Firebase Hosting</title>
 
-    <script defer src="./index.js"></script>
+    <script defer src="/index.js"></script>
     <style media="screen">
       body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
       #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
@@ -35,11 +35,13 @@
       }
       #google-auth-button {
         display: none;
+      }
+      .button.blue {
         color: #fff;
         background-color: #007bff;
         border-color: #007bff;
       }
-      #google-auth-button:hover {
+      .button.blue:hover {
         color: #fff;
         background-color: #0069d9;
         border-color: #0062cc;
@@ -62,6 +64,15 @@
         margin-top: 2rem;
         text-align: center;
       }
+
+      #message-wrapper {
+        margin-top: 2rem;
+        display: none;
+        justify-content: center;
+      }
+      #message-text-input {
+        margin-right: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -73,8 +84,12 @@
     </div>
     <p id="load">Firebase SDK Loading&hellip;</p>
     <div class="button-wrapper">
-      <button id="google-auth-button" class="button">Googleアカウントでログインする</button>
+      <button id="google-auth-button" class="button blue">Googleアカウントでログインする</button>
       <button id="line-notify-auth" class="button">LINE通知の設定</button>
+    </div>
+    <div id="message-wrapper">
+      <input type="text" id="message-text-input">
+      <button id="send-message-button" class="button blue">メッセージを送る</button>
     </div>
 
     <script>
