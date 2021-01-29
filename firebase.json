@@ -21,6 +21,10 @@
         "source": "**",
         "destination": "/index.html"
       }
+    ],
+    "predeploy": [
+      "npm run check",
+      "npm run bundle"
     ]
   },
   "emulators": {
@@ -28,7 +32,7 @@
       "port": 9099
     },
     "functions": {
-      "port": 5001
+      "port": 5010
     },
     "firestore": {
       "port": 8080

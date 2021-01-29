@@ -5,24 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Welcome to Firebase Hosting</title>
 
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/8.2.4/firebase-app.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <script defer src="/__/firebase/8.2.4/firebase-auth.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-database.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-firestore.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-functions.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-messaging.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-storage.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-analytics.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-remote-config.js"></script>
-    <script defer src="/__/firebase/8.2.4/firebase-performance.js"></script>
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
-
+    <script defer src="./index.js"></script>
     <style media="screen">
       body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
       #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
@@ -36,6 +19,49 @@
         body, #message { margin-top: 0; background: white; box-shadow: none; }
         body { border-top: 16px solid #ffa100; }
       }
+
+      .button {
+        font-weight: 400;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: middle;
+        user-select: none;
+        border: 1px solid transparent;
+        padding: .375rem .75rem;
+        font-size: 1rem;
+        line-height: 1.5;
+        border-radius: .25rem;
+        transition: color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+      }
+      #google-auth-button {
+        display: none;
+        color: #fff;
+        background-color: #007bff;
+        border-color: #007bff;
+      }
+      #google-auth-button:hover {
+        color: #fff;
+        background-color: #0069d9;
+        border-color: #0062cc;
+      }
+      #line-notify-auth {
+        display: none;
+        color: #fff;
+        background-color: #28a745;
+        border-color: #28a745;
+      }
+      #line-notify-auth:hover {
+        color: #fff;
+        background-color: #218838;
+        border-color: #1e7e34;
+      }
+      .buttton:focus {
+        box-shadow: 0 0 0 0.2rem rgb(40 167 69 / 50%);
+      }
+      .button-wrapper {
+        margin-top: 2rem;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -46,6 +72,10 @@
       <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
     </div>
     <p id="load">Firebase SDK Loading&hellip;</p>
+    <div class="button-wrapper">
+      <button id="google-auth-button" class="button">Googleアカウントでログインする</button>
+      <button id="line-notify-auth" class="button">LINE通知の設定</button>
+    </div>
 
     <script>
       document.addEventListener('DOMContentLoaded', function() {
@@ -65,24 +95,25 @@
         //
         // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
 
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
-        }
+        // try {
+        //   let app = firebase.app();
+        //   let features = [
+        //     'auth',
+        //     'database',
+        //     'firestore',
+        //     'functions',
+        //     'messaging',
+        //     'storage',
+        //     'analytics',
+        //     'remoteConfig',
+        //     'performance',
+        //   ].filter(feature => typeof app[feature] === 'function');
+        //   loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
+        // } catch (e) {
+        //   console.error(e);
+        //   loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
+        // }
+        // loadEl.textContent = 'hello';
       });
     </script>
   </body>

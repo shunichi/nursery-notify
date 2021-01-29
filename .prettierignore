@@ -1,5 +1,4 @@
 lib
-public/*.js
 .eslintrc.js
 *.json
 *.md
