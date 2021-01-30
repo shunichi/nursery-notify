@@ -29,6 +29,40 @@ const globalState: GlobalState = {
   accessToken: null,
 };
 
+function initUI() {
+  initAuthButtons();
+  initMessageInput();
+  initOAuthButton();
+}
+
+function updateUI() {
+  console.log('updateUI');
+  const signInedButtonIds = ['line-notify-auth', 'signout-button'];
+  const signOutedButtonIds = ['google-auth-button'];
+  const withTokenButtonIds = ['message-wrapper'];
+  const signedIn = (globalState.userId !== null);
+  const withToken = (globalState.accessToken !== null);
+  signInedButtonIds.forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) {
+      button.classList.toggle('d-none', !signedIn);
+    }
+  });
+  signOutedButtonIds.forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) {
+      button.classList.toggle('d-none', signedIn);
+    }
+  });
+  withTokenButtonIds.forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) {
+      button.classList.toggle('d-none', !withToken);
+    }
+  });
+}
+
+
 function lineAuth() {
   if (globalState.userId == null) return;
 
@@ -47,10 +81,25 @@ function showGreeting() {
   }
 }
 
-function showOAuthButton() {
+function initAuthButtons() {
+  const signInbutton = document.getElementById('google-auth-button');
+  if (signInbutton) {
+    signInbutton.addEventListener('click', (e) => {
+      e.preventDefault();
+      googleAuth();
+    });
+  }
+  const signOutbutton = document.getElementById('signout-button');
+  if (signOutbutton) {
+    signOutbutton.addEventListener('click', (e) => {
+      e.preventDefault();
+      signOut();
+    });
+  }
+}
+function initOAuthButton() {
   const button = document.getElementById('line-notify-auth');
   if (button) {
-    button.style.display = 'inline-block';
     button.addEventListener('click', (e) => {
       e.preventDefault();
       lineAuth();
@@ -58,21 +107,25 @@ function showOAuthButton() {
   }
 }
 
-function showMessageInput() {
+function initMessageInput() {
   const wrapper = document.getElementById('message-wrapper');
   if(wrapper) {
-    wrapper.style.display = 'flex';
     const button = document.getElementById('send-message-button');
     const input = document.getElementById('message-text-input') as HTMLInputElement | null;
     if (button && input) {
       button.addEventListener('click', (e) => {
         e.preventDefault();
         sendLineMessage(input.value);
-      })
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          sendLineMessage(input.value);
+        }
+      });
     }
   }
 }
-
 
 function parseQueryString(query: string): { state?: string, code?: string } {
   const searchParams = new URLSearchParams(query);
@@ -124,12 +177,26 @@ async function sendLineMessage(message: string): Promise<void> {
   if (globalState.accessToken == null) {
     return;
   }
+  const button = document.getElementById('send-message-button');
+  const input = document.getElementById('message-text-input') as HTMLInputElement | null;
+  if (button) { button.classList.add('disabled'); }
+  if (input) { input.disabled = true; }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const response = await postApi<any>('/api/notify', { message });
-  if (response)
-    console.log(response.data);
-  else
-    console.log('/api/notify failed');
+  try {
+    const response = await postApi<any>('/api/notify', { message });
+    if (response) {
+      console.log(response.data);
+      if (input) { input.value = ''; }
+    }
+    else {
+      console.log('/api/notify no response');
+    }
+  } catch {
+    console.log('/api/notify caught exception');
+  } finally {
+    if (button) { button.classList.remove('disabled'); }
+    if (input) { input.disabled = false; }
+  }
 }
 
 async function onAuthorizeFinished(user: firebase.User): Promise<void> {
@@ -144,10 +211,7 @@ async function onAuthorizeFinished(user: firebase.User): Promise<void> {
   } else {
     globalState.accessToken = await getLineNotifyAccessToken();
   }
-  if (globalState.accessToken) {
-    showMessageInput();
-  }
-  showOAuthButton();
+  updateUI();
 }
 
 function onAuthorizeRequired() {
@@ -155,15 +219,7 @@ function onAuthorizeRequired() {
   if (loadElem) {
     loadElem.textContent = `ログインしてください`;
   }
-
-  const button = document.getElementById('google-auth-button');
-  if (button) {
-    button.style.display = 'inline-block';
-    button.addEventListener('click', (e) => {
-      e.preventDefault();
-      googleAuth();
-    });
-  }
+  updateUI();
 }
 
 function googleAuth() {
@@ -201,15 +257,26 @@ function googleAuth() {
   });
 }
 
-const timeBegin = Date.now();
-firebase.auth().onAuthStateChanged(function(user) {
-  const timeAuthChanged = Date.now();
-  console.log(`auth check time: ${(timeAuthChanged - timeBegin) / 1000}sec`);
-  if (user) {
-    console.log('already authorized');
-    onAuthorizeFinished(user);
-  } else {
-    console.log('not authorized');
-    onAuthorizeRequired();
-  }
+function signOut() {
+  firebase.auth().signOut().then(() => {
+    globalState.userId = null;
+    globalState.userName = null;
+    globalState.accessToken = null;
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initUI();
+  const timeBegin = Date.now();
+  firebase.auth().onAuthStateChanged(function(user) {
+    const timeAuthChanged = Date.now();
+    console.log(`auth check time: ${(timeAuthChanged - timeBegin) / 1000}sec`);
+    if (user) {
+      console.log('already authorized');
+      onAuthorizeFinished(user);
+    } else {
+      console.log('not authorized');
+      onAuthorizeRequired();
+    }
+  });
 });
