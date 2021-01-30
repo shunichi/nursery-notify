@@ -23,5 +23,9 @@ module.exports = {
     "@typescript-eslint"
   ],
   "rules": {
-  }
+  },
+  "ignorePatterns": [
+    "public/**",
+    "webpack.config.js"
+  ],
 };
