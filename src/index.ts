@@ -4,7 +4,7 @@ import firebase from "firebase/";
 import 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import Cookies from 'js-cookie';
-import axios from 'axios';
+import axios, { AxiosResponse } from 'axios';
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -67,7 +67,7 @@ function showMessageInput() {
     if (button && input) {
       button.addEventListener('click', (e) => {
         e.preventDefault();
-        // sendLineMessage(input.value);
+        sendLineMessage(input.value);
       })
     }
   }
@@ -79,6 +79,17 @@ function parseQueryString(query: string): { state?: string, code?: string } {
   return [...searchParams.entries()].reduce((obj, e) => ({...obj, [e[0]]: e[1]}), {});
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function postApi<T>(path: string, data: any): Promise<AxiosResponse<T> | null> {
+  const apiUrl = `${process.env.APP_BASE_URL}${path}`;
+  const user = firebase.auth().currentUser;
+  if (user == null) return null;
+  const idToken = await user.getIdToken();
+  if (idToken == null) return null;
+  const headers = { 'Authorization': `Bearer ${idToken}` }
+  return await axios.post<T>(apiUrl, data, { headers });
+}
+
 async function storeLineNotifyAccessToken(): Promise<string | null> {
   const params = parseQueryString(window.location.search);
   const oauthState = Cookies.get('oauthState');
@@ -86,15 +97,8 @@ async function storeLineNotifyAccessToken(): Promise<string | null> {
     console.log('oauth state mismatch!');
     return null;
   }
-
-  const user = firebase.auth().currentUser;
-  if (user == null) return null;
-  const idToken = await user.getIdToken();
-  const url = process.env.STORE_TOKEN_FUNCTION_URL;
-  if (url == null) return null;
-
-  const headers = { 'Authorization': `Bearer ${idToken}` }
-  const response = await axios.post<{ accessToken: string }>(url, {code: params.code}, { headers });
+  const response = await postApi<{ accessToken: string }>('/api/oauth/callback', { code: params.code });
+  if (response == null) return null;
   const token = response.data.accessToken
   console.log(`token: ${token}`);
   return token;
@@ -105,6 +109,7 @@ async function getLineNotifyAccessToken(): Promise<string | null> {
   const docRef = db.collection('users').doc(globalState.userId);
   const doc = await docRef.get();
   if (doc.exists) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any = doc.data();
     if (data.lineNotifyToken) {
       console.log(`lineNotifyToken: ${data.lineNotifyToken}`);
@@ -115,15 +120,16 @@ async function getLineNotifyAccessToken(): Promise<string | null> {
   return null;
 }
 
-// CORSでダメだった
 async function sendLineMessage(message: string): Promise<void> {
   if (globalState.accessToken == null) {
     return;
   }
-  const apiUrl = 'https://notify-api.line.me/api/notify';
-  const headers = { 'Authorization': `Bearer ${globalState.accessToken}` }
-  const response = await axios.post<{ status: number, message: string }>(apiUrl, { message }, { headers });
-  console.log(response.data);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const response = await postApi<any>('/api/notify', { message });
+  if (response)
+    console.log(response.data);
+  else
+    console.log('/api/notify failed');
 }
 
 async function onAuthorizeFinished(user: firebase.User): Promise<void> {
