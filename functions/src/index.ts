@@ -8,7 +8,6 @@ import * as corsLib from "cors";
 import * as express from "express";
 import * as cookieParser from "cookie-parser";
 import { getBrowserPage, loginAndGetArticleList, scrapeDetailPage, notifyPdfAsImages, Article, TextAndFile } from "./scraping";
-import { credential } from "firebase-admin";
 
 const app = express();
 const cors = corsLib({origin: true});;
@@ -54,6 +53,14 @@ async function getUserIdAndToken(userId: string): Promise<UserIdAndToken | null>
     return { uid: doc.id, lineNotifyToken: data.lineNotifyToken };
   else
     return null;
+}
+
+async function permittedUser(user: firebase.auth.DecodedIdToken): Promise<boolean> {
+  return true;
+
+  // if (user.email == null ) return false;
+  // const querySnapshot = await db.collection("permittedUsers").where("email", "==", user.email).get()
+  // return querySnapshot.size > 0;
 }
 
 type StatusApiResponse = {
@@ -250,18 +257,18 @@ async function getAccessToken(code: string): Promise<string | null> {
   }
 }
 
-async function processRequest(user: firebase.auth.DecodedIdToken, code: string): Promise<string | null> {
+async function createOAuthToken(user: firebase.auth.DecodedIdToken, code: string): Promise<string | null> {
   const docRef = db.collection("users").doc(user.uid);
   const accessToken = await getAccessToken(code);
   if (accessToken == null) {
     return null;
   }
 
-  // TODO: 許可されたユーザーかチェック
-  // const doc = await docRef.get();
-  // if (doc.exists) {
-  //   const data: any = doc.data();
-  // }
+  if (!await permittedUser(user)) {
+    const { uid, name, email } = user;
+    console.log("Unpermitted user: ", { uid, name, email });
+    return null;
+  }
 
   await docRef.set({ lineNotifyToken: accessToken });
   functions.logger.info("token saved", { accessToken });
@@ -326,12 +333,8 @@ app.post("/api/oauth/callback", async (req: any, res:  any) => {
     res.status(422).json({error: "code required"});
     return;
   }
-  // if (req.cookies.oauthState !== state) {
-  //   res.status(422).json({error: "state mismatch"});
-  //   return;
-  // }
 
-  const accessToken = await processRequest(req.user, code);
+  const accessToken = await createOAuthToken(req.user, code);
   if (accessToken == null)  {
     res.status(422).json({error: "failed"});
     return;

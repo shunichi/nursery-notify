@@ -49,7 +49,7 @@ function initUI() {
 }
 
 function updateUI() {
-  console.log('updateUI:', globalState);
+  // console.log('updateUI:', globalState);
   const signInedButtonIds = ['signout-button'];
   const signOutedButtonIds = ['google-auth-button'];
   const oauthableButtonIds = ['line-notify-auth'];
@@ -200,18 +200,23 @@ async function postApi<T>(path: string, data: any): Promise<AxiosResponse<T> | n
   return await axios.post<T>(apiUrl, data, { headers });
 }
 
-async function storeLineNotifyAccessToken(): Promise<string | null> {
+async function createLineNotifyAccessToken(): Promise<string | null> {
   const params = parseQueryString(window.location.search);
   const oauthState = Cookies.get('oauthState');
   if (params.state !== oauthState ) {
     console.log('oauth state mismatch!');
     return null;
   }
-  const response = await postApi<{ accessToken: string }>('/api/oauth/callback', { code: params.code });
-  if (response == null) return null;
-  const token = response.data.accessToken
-  console.log(`token: ${token}`);
-  return token;
+  try {
+    const response = await postApi<{ accessToken: string }>('/api/oauth/callback', { code: params.code });
+    if (response == null) return null;
+    const token = response.data.accessToken
+    console.log(`token created: ${token}`);
+    return token;
+  } catch(error) {
+    console.log(`token creation faild`)
+    return null;
+  }
 }
 
 type StatusApiResponse = OAuthStatus;
@@ -273,14 +278,28 @@ async function sendLineMessage(message: string): Promise<void> {
   }
 }
 
+async function storeUserInfo(user: firebase.User) {
+  const docRef = db.collection('users').doc(user.uid);
+  const { email, displayName, providerId } = user;
+  await docRef.set({ email, displayName, providerId }, { merge: true });
+}
+
 async function onAuthorizeFinished(user: firebase.User): Promise<void> {
   globalState.userId = user.uid;
   globalState.userName = user.displayName;
+  storeUserInfo(user);
 
   showGreeting();
 
   if (window.location.pathname === '/oauth/callback') {
-    if (await storeLineNotifyAccessToken()) {
+    const params = parseQueryString(window.location.search);
+    if (params.code != null) {
+      if (await createLineNotifyAccessToken()) {
+        globalState.oauthStatus = await getTokenStatus();
+      } else {
+        alert('LINE連携処理に失敗しました');
+      }
+    } else {
       globalState.oauthStatus = await getTokenStatus();
     }
     history.replaceState(null, '', '/');
