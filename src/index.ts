@@ -4,7 +4,7 @@ import firebase from "firebase/";
 import 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import Cookies from 'js-cookie';
-import axios, { AxiosResponse } from 'axios';
+import axios, { AxiosResponse, AxiosError } from 'axios';
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -20,32 +20,51 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 if (location.hostname === "localhost") {
   db.useEmulator("localhost", 8080);
-  firebase.auth().useEmulator('http://localhost:9099/');
+  // firebase.auth().useEmulator('http://localhost:9099/');
 }
+
+type TokenStatus = "valid" | "noToken" | "unknown";
+type TargetType = "USER" | "GROUP";
+type OAuthStatus = {
+  tokenStatus: TokenStatus;
+  targetType?: TargetType;
+  target?: string;
+};
 type GlobalState = {
   userName: string | null;
   userId: string | null;
-  accessToken: string | null;
+  oauthStatus: OAuthStatus;
 };
 const globalState: GlobalState = {
   userName: null,
   userId: null,
-  accessToken: null,
+  oauthStatus: { tokenStatus: "unknown" },
 };
 
 function initUI() {
   initAuthButtons();
   initMessageInput();
   initOAuthButton();
+  initRevokeButton();
 }
 
 function updateUI() {
-  console.log('updateUI');
-  const signInedButtonIds = ['line-notify-auth', 'signout-button'];
+  console.log('updateUI:', globalState);
+  const signInedButtonIds = ['signout-button'];
   const signOutedButtonIds = ['google-auth-button'];
-  const withTokenButtonIds = ['message-wrapper'];
+  const oauthableButtonIds = ['line-notify-auth'];
+  const withTokenButtonIds = ['message-wrapper', 'line-notify-revoke'];
   const signedIn = (globalState.userId !== null);
-  const withToken = (globalState.accessToken !== null);
+  const withToken = (globalState.oauthStatus.tokenStatus === "valid");
+  const target = document.getElementById('line-notify-target')
+  if (target) {
+    if (globalState.oauthStatus.target) {
+      target.classList.remove('d-none');
+      target.innerText = `メッセージ送信先: ${globalState.oauthStatus.target}`;
+    } else {
+      target.classList.add('d-none');
+    }
+  }
   signInedButtonIds.forEach((id) => {
     const button = document.getElementById(id);
     if (button) {
@@ -62,6 +81,12 @@ function updateUI() {
     const button = document.getElementById(id);
     if (button) {
       button.classList.toggle('d-none', !withToken);
+    }
+  });
+  oauthableButtonIds.forEach((id) => {
+    const button = document.getElementById(id);
+    if (button) {
+      button.classList.toggle('d-none', globalState.oauthStatus.tokenStatus !== "noToken");
     }
   });
 }
@@ -101,12 +126,26 @@ function initAuthButtons() {
     });
   }
 }
+
 function initOAuthButton() {
   const button = document.getElementById('line-notify-auth');
   if (button) {
     button.addEventListener('click', (e) => {
       e.preventDefault();
       lineAuth();
+    });
+  }
+}
+
+function initRevokeButton() {
+  const button = document.getElementById('line-notify-revoke');
+  if (button) {
+    button.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!window.confirm('LINE通知を解除してよろしいですか？')) return;
+      const tokenStatus = await revokeToken();
+      globalState.oauthStatus = { tokenStatus };
+      updateUI();
     });
   }
 }
@@ -136,6 +175,20 @@ function parseQueryString(query: string): { state?: string, code?: string } {
   return [...searchParams.entries()].reduce((obj, e) => ({...obj, [e[0]]: e[1]}), {});
 }
 
+async function getApi<T>(path: string): Promise<AxiosResponse<T> | null> {
+  const apiUrl = `${process.env.APP_BASE_URL}${path}`;
+  const user = firebase.auth().currentUser;
+  if (user == null) return null;
+  const idToken = await user.getIdToken();
+  if (idToken == null) return null;
+  const headers = { 'Authorization': `Bearer ${idToken}` }
+  try {
+    return await axios.get<T>(apiUrl, { headers });
+  } catch(error) {
+    return null;
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function postApi<T>(path: string, data: any): Promise<AxiosResponse<T> | null> {
   const apiUrl = `${process.env.APP_BASE_URL}${path}`;
@@ -161,6 +214,23 @@ async function storeLineNotifyAccessToken(): Promise<string | null> {
   return token;
 }
 
+type StatusApiResponse = OAuthStatus;
+async function getTokenStatus(): Promise<OAuthStatus> {
+  const response = await getApi<StatusApiResponse>("/api/line/status");
+  if (response && response.data)
+    return response.data;
+  else
+    return { tokenStatus: "unknown" };
+}
+
+async function revokeToken(): Promise<TokenStatus> {
+  const response = await postApi<StatusApiResponse>("/api/line/revoke", {});
+  if (response && response.data && response.data.tokenStatus)
+    return response.data.tokenStatus;
+  else
+    return "unknown";
+}
+
 async function getLineNotifyAccessToken(): Promise<string | null> {
   if (globalState.userId == null) return null;
   const docRef = db.collection('users').doc(globalState.userId);
@@ -178,7 +248,7 @@ async function getLineNotifyAccessToken(): Promise<string | null> {
 }
 
 async function sendLineMessage(message: string): Promise<void> {
-  if (globalState.accessToken == null) {
+  if (globalState.oauthStatus.tokenStatus !== "valid") {
     return;
   }
   const button = document.getElementById('send-message-button');
@@ -187,16 +257,16 @@ async function sendLineMessage(message: string): Promise<void> {
   if (input) { input.disabled = true; }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   try {
-    const response = await postApi<any>('/api/notify', { message });
+    const response = await postApi<any>('/api/line/notify', { message });
     if (response) {
       console.log(response.data);
       if (input) { input.value = ''; }
     }
     else {
-      console.log('/api/notify no response');
+      console.log('/api/line/notify no response');
     }
   } catch {
-    console.log('/api/notify caught exception');
+    console.log('/api/line/notify caught exception');
   } finally {
     if (button) { button.classList.remove('disabled'); }
     if (input) { input.disabled = false; }
@@ -210,10 +280,13 @@ async function onAuthorizeFinished(user: firebase.User): Promise<void> {
   showGreeting();
 
   if (window.location.pathname === '/oauth/callback') {
-    globalState.accessToken = await storeLineNotifyAccessToken();
+    if (await storeLineNotifyAccessToken()) {
+      globalState.oauthStatus = await getTokenStatus();
+    }
     history.replaceState(null, '', '/');
   } else {
-    globalState.accessToken = await getLineNotifyAccessToken();
+    globalState.oauthStatus = await getTokenStatus();
+    console.log("tokenStatus:", globalState.oauthStatus);
   }
   updateUI();
 }
@@ -265,7 +338,7 @@ function signOut() {
   firebase.auth().signOut().then(() => {
     globalState.userId = null;
     globalState.userName = null;
-    globalState.accessToken = null;
+    globalState.oauthStatus = { tokenStatus: "unknown" };
   });
 }
 

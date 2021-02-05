@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as functions from "firebase-functions";
 import * as firebase from "firebase-admin";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import * as querystring from "querystring";
 import * as FormData from "form-data";
 import * as corsLib from "cors";
@@ -29,7 +29,7 @@ type UserIdAndToken = {
   lineNotifyToken: string;
 };
 
-async function getUserIdAndTokens(): Promise<UserIdAndToken[]> {
+async function getAllUserIdAndTokens(): Promise<UserIdAndToken[]> {
   const result: UserIdAndToken[] = [];
   const querySnapshot = await db.collection("users").where("lineNotifyToken", "!=", null).get();
   // const querySnapshot = await db.collection("users").get();
@@ -40,12 +40,132 @@ async function getUserIdAndTokens(): Promise<UserIdAndToken[]> {
   return result;
 }
 
+async function getUserIdAndToken(userId: string): Promise<UserIdAndToken | null> {
+  console.log(`userId: ${userId}`);
+  const docRef = await db.collection("users").doc(userId);
+  const doc = await docRef.get();
+  console.log(doc);
+  if (!doc.exists) return null;
+  const data = doc.data() as any;
+  console.log("data:", JSON.stringify(data));
+  console.log(`lineNotifyToken: ${data.lineNotifyToken}`);
+  if (data.lineNotifyToken)
+    return { uid: doc.id, lineNotifyToken: data.lineNotifyToken };
+  else
+    return null;
+}
+
+type StatusApiResponse = {
+  status: number;
+  message: string;
+  targetType?: string;
+  target?: string;
+};
+
+function isAxiosError(error: any): error is AxiosError {
+  return error.isAxiosError === true;
+}
+function authHeader(token: string): { Authorization: string }  {
+  return { "Authorization": `Bearer ${token}` };
+}
+
+async function clearToken(userIdAndToken: UserIdAndToken): Promise<void> {
+  const docRef = db.collection("users").doc(userIdAndToken.uid);
+  await docRef.set({ lineNotifyToken: null });
+}
+
+async function checkTokenStatus(userIdAndToken: UserIdAndToken): Promise<StatusApiResponse | null> {
+  try {
+    const response = await axios.get<StatusApiResponse>("https://notify-api.line.me/api/status", { headers: authHeader(userIdAndToken.lineNotifyToken) });
+    return response.data;
+  } catch (error) {
+    if (isAxiosError(error) && error.response) {
+      const { status, message } = error.response.data;
+      return { status, message };
+    } else {
+      console.error(error);
+      return null;
+    }
+  }
+}
+
+type TokenStatus = "valid" | "noToken" | "unknown";
+type TargetType = "USER" | "GROUP";
+type OAuthStatus = {
+  tokenStatus: TokenStatus;
+  targetType?: TargetType;
+  target?: string;
+};
+
+async function validateToken(userIdAndToken: UserIdAndToken): Promise<OAuthStatus> {
+  const response = await checkTokenStatus(userIdAndToken);
+  if (response) {
+    switch(response.status) {
+      case 200:
+        if (response.targetType === "USER" || response.targetType === "GROUP")
+          return { tokenStatus: "valid", targetType: response.targetType, target: response.target };
+        else
+          return { tokenStatus: "valid", targetType: "GROUP", target: response.target };
+      case 401:
+        {
+          console.log(`invalid token for user ${userIdAndToken.uid}`);
+          await clearToken(userIdAndToken);
+          return { tokenStatus: "noToken" };
+        }
+      default:
+        console.error(`unknown error ${JSON.stringify(response)}`);
+        return { tokenStatus: "unknown" };
+    }
+  } else {
+    return { tokenStatus: "unknown" };
+  }
+}
+
+async function validateTokens(userIdAndTokens: UserIdAndToken[]): Promise<UserIdAndToken[]> {
+  const result: UserIdAndToken[] = [];
+  for(let userIdAndToken of userIdAndTokens) {
+    const oauthStatus = await validateToken(userIdAndToken);
+    if (oauthStatus.tokenStatus === "valid") {
+      result.push(userIdAndToken);
+    }
+  }
+  return result;
+}
+
+type RevokeApiResponse = {
+  status: number;
+  message: string;
+};
+
+async function revokeToken(userIdAndToken: UserIdAndToken): Promise<TokenStatus> {
+  try {
+    await axios.post<RevokeApiResponse>("https://notify-api.line.me/api/revoke", {}, { headers: authHeader(userIdAndToken.lineNotifyToken) });
+    console.log("revokeToken: reovke finished");
+    await clearToken(userIdAndToken);
+    console.log("revokeToken: token cleared");
+    return "noToken";
+  } catch (error) {
+    if (isAxiosError(error) && error.response) {
+      if (error.response.status === 401) {
+        console.log("revokeToken: invalid token");
+        await clearToken(userIdAndToken);
+        return "noToken";
+      }
+      return "unknown";
+    } else {
+      console.error(error);
+      return "unknown";
+    }
+  }
+
+}
+
 async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: string, imageBuffer?: Buffer): Promise<UserIdAndToken[]> {
-  console.log("notifyMessageToAll", userIdAndTokens, message, imageBuffer?.length);
+  // console.log("notifyMessageToAll", userIdAndTokens, message, imageBuffer?.length);
   const formData = new FormData();
   formData.append("message", message);
   if (imageBuffer) {
-    console.log(`image size: ${imageBuffer.byteLength}`);
+    // console.log(`image size: ${imageBuffer.byteLength}`);
     await fs.promises.mkdir("./tmp", { recursive: true });
     await fs.promises.writeFile("./tmp/image.jpg", imageBuffer);
     // Bufferをそのまま送ると 500 エラーになった
@@ -135,8 +255,14 @@ async function processRequest(user: firebase.auth.DecodedIdToken, code: string):
 
 const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
   if (req.path === "/api/scraping") {
-    next();
-    return;
+    if (req.headers.authorization && req.headers.authorization === `Bearer ${functions.config().app.scraping_api_token}`) {
+      next();
+      return;
+    } else {
+      console.error("Invalid Scraping API token");
+      res.status(403).send("Unauthorized");
+      return;
+    }
   }
 
   console.log("Check if request is authorized with Firebase ID token");
@@ -198,7 +324,7 @@ app.post("/api/oauth/callback", async (req: any, res:  any) => {
   res.json({ accessToken });
 });
 
-app.post("/api/notify", async (req: any, res): Promise<void> => {
+app.post("/api/line/notify", async (req: any, res): Promise<void> => {
   // res.json({ message: "hello, notify!"});
   const { message } = req.body;
   const response = await sendMessage(req.user, message);
@@ -207,14 +333,30 @@ app.post("/api/notify", async (req: any, res): Promise<void> => {
   } else {
     res.json({ message: "faild"});
   }
-})
+});
 
-app.get("/api/status", (req, res) => {
-  res.json({ message: "hello, status!", cookies: req.cookies});
-})
+app.get("/api/line/status", async (req: any, res) => {
+  const userIdAndToken = await getUserIdAndToken(req.user.uid);
+  if (userIdAndToken) {
+    const oauthStatus = await validateToken(userIdAndToken);
+    res.json(oauthStatus);
+  } else {
+    res.json({ tokenStatus: "noToken" });
+  }
+});
+
+app.post("/api/line/revoke", async (req: any, res) => {
+  const userIdAndToken = await getUserIdAndToken(req.user.uid);
+  if (userIdAndToken) {
+    const tokenStatus = await revokeToken(userIdAndToken);
+    res.json({ tokenStatus });
+  } else {
+    res.json({ tokenStatus: "noToken" });
+  }
+});
 
 app.post("/api/scraping", async (_req, res) => {
-  const userIdAndTokens = await getUserIdAndTokens();
+  const userIdAndTokens = await validateTokens(await getAllUserIdAndTokens());
   if (userIdAndTokens.length == 0) {
     res.json({ message: "No valid tokens" });
     return;
@@ -227,22 +369,16 @@ app.post("/api/scraping", async (_req, res) => {
   if (textAndFile) {
     const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
     let succeeded = [...userIdAndTokens];
-    if (/\.pdf$/.test(textAndFile.filePath)) {
-      try {
-        succeeded = await notifyMessageToAll(succeeded, message);
-        await notifyPdfAsImages(textAndFile, async (message: string, imageBuffer?: Buffer): Promise<void> => {
-          succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
-        });
-      } catch(error) {
-        if (error.response) {
-          console.log(error.response.data);
-        } else {
-          console.log(error);
-        }
-      }
-    } else {
-      succeeded = await notifyMessageToAll(succeeded, message);
-    }
+    succeeded = await notifyMessageToAll(succeeded, message);
+    // if (/\.pdf$/.test(textAndFile.filePath)) {
+    //   try {
+    //     await notifyPdfAsImages(textAndFile, async (message: string, imageBuffer?: Buffer): Promise<void> => {
+    //       succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
+    //     });
+    //   } catch(error) {
+    //     console.log(error);
+    //   }
+    // }
     res.json({ message: "Succeeded", count: succeeded.length });
   } else {
     res.json({ mssage: "No messages" })

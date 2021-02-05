@@ -28,6 +28,9 @@
       #message-text-input {
         margin-right: 1rem;
       }
+      #line-notify-target {
+        margin-bottom: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -35,12 +38,16 @@
       <p id="load">Loading&hellip;</p>
       <div class="button-wrapper">
         <button id="google-auth-button" class="btn btn-primary d-none">Googleアカウントでログインする</button>
-        <button id="line-notify-auth" class="btn btn-success d-none">LINE通知の設定</button>
         <button id="signout-button" class="btn btn-outline-secondary d-none">ログアウトする</button>
       </div>
       <div id="message-wrapper" class="d-none">
-        <input type="text" id="message-text-input" class="form-control">
-        <button id="send-message-button" class="btn btn-primary text-nowrap">メッセージを送る</button>
+        <input type="text" id="message-text-input" class="form-control" placeholder="メッセージ">
+        <button id="send-message-button" class="btn btn-primary text-nowrap">テスト送信</button>
+      </div>
+      <div class="button-wrapper">
+        <div id="line-notify-target"></div>
+        <button id="line-notify-auth" class="btn btn-success d-none">LINE通知の設定</button>
+        <button id="line-notify-revoke" class="btn btn-danger d-none">LINE通知を解除</button>
       </div>
     </div>
   </body>
