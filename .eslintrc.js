@@ -26,6 +26,6 @@ module.exports = {
   },
   "ignorePatterns": [
     "public/**",
-    "webpack.config.js"
+    "webpack.config.*js"
   ],
 };

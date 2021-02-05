@@ -1,13 +1,16 @@
+import * as fs from "fs";
 import * as functions from "firebase-functions";
 import * as firebase from "firebase-admin";
 import axios from "axios";
 import * as querystring from "querystring";
+import * as FormData from "form-data";
 import * as corsLib from "cors";
 import * as express from "express";
 import * as cookieParser from "cookie-parser";
+import { getBrowserPage, scrapeAndDownloadFile, notifyPdfAsImages } from "./scraping";
+
 const app = express();
 const cors = corsLib({origin: true});;
-
 
 firebase.initializeApp();
 const db = firebase.firestore();
@@ -20,6 +23,52 @@ type NotifyResponse = {
   status: number;
   message: string;
 };
+
+type UserIdAndToken = {
+  uid: string;
+  lineNotifyToken: string;
+};
+
+async function getUserIdAndTokens(): Promise<UserIdAndToken[]> {
+  const result: UserIdAndToken[] = [];
+  const querySnapshot = await db.collection("users").where("lineNotifyToken", "!=", null).get();
+  // const querySnapshot = await db.collection("users").get();
+  querySnapshot.forEach(function(doc) {
+    const data: any = doc.data();
+    result.push({ uid: doc.id, lineNotifyToken: data.lineNotifyToken });
+  });
+  return result;
+}
+
+async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: string, imageBuffer?: Buffer): Promise<UserIdAndToken[]> {
+  console.log("notifyMessageToAll", userIdAndTokens, message, imageBuffer?.length);
+  const formData = new FormData();
+  formData.append("message", message);
+  if (imageBuffer) {
+    console.log(`image size: ${imageBuffer.byteLength}`);
+    await fs.promises.mkdir("./tmp", { recursive: true });
+    await fs.promises.writeFile("./tmp/image.jpg", imageBuffer);
+    // Bufferをそのまま送ると 500 エラーになった
+    // よくわからないが、一度ファイルに書いて送ると送れた
+    formData.append("imageFile", fs.createReadStream("./tmp/image.jpg"));
+    // formData.append("imageFile", imageBuffer, {
+    //   filename: 'image.jpg',
+    //   contentType: 'image/jpeg',
+    //   knownLength: imageBuffer.length,
+    //   });
+  }
+  const succeeded: UserIdAndToken[] = [];
+  for(let userIdAndToken of userIdAndTokens) {
+    const headers = { ...formData.getHeaders(), "Authorization": `Bearer ${userIdAndToken.lineNotifyToken}` };
+    try {
+      await axios.post("https://notify-api.line.me/api/notify", formData, { headers });
+      succeeded.push(userIdAndToken);
+    } catch (error) {
+      functions.logger.info("notify api error", { response: { status: error.response.status, data: error.response.data } });
+    }
+  }
+  return succeeded;
+}
 
 async function sendMessage(user: firebase.auth.DecodedIdToken, message: string): Promise<NotifyResponse | null> {
   const docRef = db.collection("users").doc(user.uid);
@@ -85,10 +134,10 @@ async function processRequest(user: firebase.auth.DecodedIdToken, code: string):
 }
 
 const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
-  // if (req.path === "/api/oauth/callback") {
-  //   next();
-  //   return;
-  // }
+  if (req.path === "/api/scraping") {
+    next();
+    return;
+  }
 
   console.log("Check if request is authorized with Firebase ID token");
 
@@ -163,5 +212,41 @@ app.post("/api/notify", async (req: any, res): Promise<void> => {
 app.get("/api/status", (req, res) => {
   res.json({ message: "hello, status!", cookies: req.cookies});
 })
+
+app.post("/api/scraping", async (_req, res) => {
+  const userIdAndTokens = await getUserIdAndTokens();
+  if (userIdAndTokens.length == 0) {
+    res.json({ message: "No valid tokens" });
+    return;
+  }
+  const config = functions.config();
+  const { browser, page } = await getBrowserPage(false);
+  const textAndFile = await scrapeAndDownloadFile(page, { id: config.ra9.user_id, password: config.ra9.password });
+  browser.close();
+  console.log(textAndFile);
+  if (textAndFile) {
+    const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
+    let succeeded = [...userIdAndTokens];
+    if (/\.pdf$/.test(textAndFile.filePath)) {
+      try {
+        succeeded = await notifyMessageToAll(succeeded, message);
+        await notifyPdfAsImages(textAndFile, async (message: string, imageBuffer?: Buffer): Promise<void> => {
+          succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
+        });
+      } catch(error) {
+        if (error.response) {
+          console.log(error.response.data);
+        } else {
+          console.log(error);
+        }
+      }
+    } else {
+      succeeded = await notifyMessageToAll(succeeded, message);
+    }
+    res.json({ message: "Succeeded", count: succeeded.length });
+  } else {
+    res.json({ mssage: "No messages" })
+  }
+});
 
 export const api = functions.https.onRequest(app);

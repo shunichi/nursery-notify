@@ -69,3 +69,6 @@ node_modules/
 test_data/
 public/*.js
 public/*.js.map
+.runtimeconfig.json
+*.pdf
+tmp/

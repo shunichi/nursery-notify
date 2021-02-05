@@ -18,6 +18,10 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+if (location.hostname === "localhost") {
+  db.useEmulator("localhost", 8080);
+  firebase.auth().useEmulator('http://localhost:9099/');
+}
 type GlobalState = {
   userName: string | null;
   userId: string | null;

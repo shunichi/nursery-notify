@@ -3,8 +3,8 @@ const common = require('./webpack.config.common.js');
 const Dotenv = require('dotenv-webpack');
 
 module.exports = merge(common, {
-    mode: 'production',
+    mode: 'development',
     plugins: [
-        new Dotenv()
+        new Dotenv({ path: "./.env.development" })
     ],
 });
