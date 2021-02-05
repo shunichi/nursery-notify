@@ -79,7 +79,7 @@ function authHeader(token: string): { Authorization: string }  {
 
 async function clearToken(userIdAndToken: UserIdAndToken): Promise<void> {
   const docRef = db.collection("users").doc(userIdAndToken.uid);
-  await docRef.set({ lineNotifyToken: null });
+  await docRef.set({ lineNotifyToken: null }, { merge: true });
 }
 
 async function checkTokenStatus(userIdAndToken: UserIdAndToken): Promise<StatusApiResponse | null> {
@@ -270,7 +270,7 @@ async function createOAuthToken(user: firebase.auth.DecodedIdToken, code: string
     return null;
   }
 
-  await docRef.set({ lineNotifyToken: accessToken });
+  await docRef.set({ lineNotifyToken: accessToken }, { merge: true });
   functions.logger.info("token saved", { accessToken });
   return accessToken;
 }
@@ -391,11 +391,10 @@ async function sendArticle(userIdAndTokens: UserIdAndToken[], article: Article, 
   await makeArticleSent(article);
 }
 
-app.post("/api/scraping", async (_req, res) => {
+async function scraping(): Promise<string> {
   const userIdAndTokens = await validateTokens(await getAllUserIdAndTokens());
   if (userIdAndTokens.length === 0) {
-    res.json({ message: "No valid tokens" });
-    return;
+    return "No valid tokens";
   }
   const config = functions.config();
   const { browser, page } = await getBrowserPage(false);
@@ -403,15 +402,25 @@ app.post("/api/scraping", async (_req, res) => {
   const articles = (await loginAndGetArticleList(page, credential)).reverse();
   const unsent = await unsentArticles(articles);
   if (unsent.length === 0) {
-    res.json({ message: "No unsent articles" });
-    return;
+    return "No unsent articles";
   }
   for(let article of unsent) {
     const textAndFile = await scrapeDetailPage(page, article.url);
     await sendArticle(userIdAndTokens, article, textAndFile);
   }
   browser.close();
-  res.json({ message: "Succeeded" });
+  return "Succeeded";
+}
+
+app.post("/api/scraping", async (_req, res) => {
+  const message = await scraping();
+  res.json({ message });
 });
 
 export const api = functions.https.onRequest(app);
+
+export const scheduled = functions.pubsub.schedule("0 16,17,18,19 * * 1-5").onRun(async (_context) => {
+  const message = await scraping();
+  functions.logger.info(message);
+  return null;
+});
