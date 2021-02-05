@@ -53,12 +53,11 @@ async function cleanupDirectory(path: string): Promise<void> {
   const fileNames = await fs.promises.readdir(path);
   const promises = fileNames.map((fileName) => {
     const filePath = pathLib.join(path, fileName);
-    console.log(`rm ${filePath}`);
+    // console.log(`rm ${filePath}`);
     return fs.promises.unlink(filePath);
   });
-  console.log(promises);
   await Promise.all(promises);
-  console.log("cleanup finished.");
+  // console.log("cleanup finished.");
 }
 
 async function download(page: puppeteer.Page): Promise<string> {
@@ -69,13 +68,13 @@ async function download(page: puppeteer.Page): Promise<string> {
   });
   await sleep(3000);
   await page.click(".sys-attached-file-dl-link a");
-  console.log("waiting download.")
+  console.log("Downloading...")
   const downloadedFilePath = await waitDownload(globalConfig.downloadPath);
-  console.log(`downloaded: ${downloadedFilePath}`);
+  console.log(`Downloaded: ${downloadedFilePath}`);
   return downloadedFilePath;
 }
 
-type TextAndFile = {
+export type TextAndFile = {
   title: string;
   text: string;
   filePath: string;
@@ -85,44 +84,62 @@ async function getText(page: puppeteer.Page, selector: string): Promise<string |
   return page.$eval(selector, (elem) => elem.textContent);
 }
 
-async function scrapeDetailPage(page: puppeteer.Page, url: string): Promise<TextAndFile> {
+export async function scrapeDetailPage(page: puppeteer.Page, url: string): Promise<TextAndFile> {
   await goto(page, url);
   await waitForSelector(page, ".topic-contents");
-  const dateText = await getText(page, ".val-mail-send_date .date");
+  // const dateText = await getText(page, ".val-mail-send_date .date");
   const text = (await getText(page, ".topic-contents")) || "";
   const title = (await getText(page, ".topic-headline .val-mail-title")) || "";
-  if (dateText) {
-    const match = /(\d+)\/(\d+)\/(\d+)/.exec(dateText);
-    if (match) {
-      new Date()
-    }
-  }
   console.log(`title: ${title}`)
-  console.log(text)
+  console.log(text);
   const filePath = await download(page);
   return { title, text, filePath };
 }
 
-export async function scrapeAndDownloadFile(page: puppeteer.Page, credential: Credential): Promise<TextAndFile | null> {
+export async function loginToRa9(page: puppeteer.Page, credential: Credential): Promise<void> {
   await goto(page, "https://ra9.jp/user");
   await page.waitForSelector("input[name=email]", {timeout: 5000});
   await fillIn(page, "input[name=email]", credential.id);
   await fillIn(page, "input[name=password]", credential.password);
   await waitUntilLoad(page, async () => page.click("input[name=login]"));
+}
+
+export type Article = {
+  url: string;
+  title: string;
+  date: string;
+};
+
+export async function getArticleList(page: puppeteer.Page): Promise<Article[]> {
   await goto(page, "https://ra9.jp/teams/519228/11952930");
   const selector = ".sys-newmail td.hidden-anchor a";
   await page.waitForSelector(selector, {timeout: 5000});
-  const hrefs = await page.$$eval(".sys-newmail tr",
+  return (await page.$$eval(".sys-newmail tr",
     (elements: Element[]) => elements.map((tr) => {
       const a = tr.querySelector("td.hidden-anchor a") as (HTMLAnchorElement | null);
       const title = tr.querySelector(".sys-title");
       const date = tr.querySelector(".date-cell");
-      return [a ? a.href : "",  title ? title.textContent : "", date ? date.textContent : ""];
+      if (a == null || title == null || date == null) return null;
+      return {
+        url: a.href,
+        title: title.textContent,
+        date: date.textContent,
+      };
     })
-  );
-  console.log(hrefs);
-  if (hrefs.length > 0 && hrefs[0][0]) {
-    return await scrapeDetailPage(page, hrefs[0][0]);
+  )).filter(a => a) as Article[];
+}
+
+export async function loginAndGetArticleList(page: puppeteer.Page, credential: Credential): Promise<Article[]> {
+  await loginToRa9(page, credential);
+  return await getArticleList(page);
+}
+
+export async function scrapeAndDownloadFile(page: puppeteer.Page, credential: Credential): Promise<TextAndFile | null> {
+  await loginToRa9(page, credential);
+  const articles = await getArticleList(page);
+  console.log(articles);
+  if (articles.length > 0 && articles[0].url) {
+    return await scrapeDetailPage(page, articles[0].url);
   }
   return null;
 }

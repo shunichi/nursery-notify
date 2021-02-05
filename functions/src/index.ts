@@ -7,7 +7,8 @@ import * as FormData from "form-data";
 import * as corsLib from "cors";
 import * as express from "express";
 import * as cookieParser from "cookie-parser";
-import { getBrowserPage, scrapeAndDownloadFile, notifyPdfAsImages } from "./scraping";
+import { getBrowserPage, loginAndGetArticleList, scrapeDetailPage, notifyPdfAsImages, Article, TextAndFile } from "./scraping";
+import { credential } from "firebase-admin";
 
 const app = express();
 const cors = corsLib({origin: true});;
@@ -190,6 +191,20 @@ async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: st
   return succeeded;
 }
 
+async function unsentArticles(articles: Article[]): Promise<Article[]> {
+  const querySnapShot = await db.collection("sent").where("url", "in", articles.map(a => a.url)).get();
+  const sent: string[] = []
+  querySnapShot.forEach(doc => {
+    const data = doc.data() as any;
+    sent.push(data.url);
+  });
+  return articles.filter(a => !sent.includes(a.url));
+}
+
+async function makeArticleSent(article: Article): Promise<void> {
+  await db.collection("sent").add(article);
+}
+
 async function sendMessage(user: firebase.auth.DecodedIdToken, message: string): Promise<NotifyResponse | null> {
   const docRef = db.collection("users").doc(user.uid);
   const doc = await docRef.get();
@@ -355,34 +370,45 @@ app.post("/api/line/revoke", async (req: any, res) => {
   }
 });
 
+async function sendArticle(userIdAndTokens: UserIdAndToken[], article: Article, textAndFile: TextAndFile): Promise<void> {
+  const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
+  let succeeded = [...userIdAndTokens];
+  succeeded = await notifyMessageToAll(succeeded, message);
+
+  if (/\.pdf$/.test(textAndFile.filePath)) {
+    try {
+      const notifyFunc = async (message: string, imageBuffer?: Buffer): Promise<void> => {
+        succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
+      }
+      await notifyPdfAsImages(textAndFile, notifyFunc);
+    } catch(error) {
+      console.log(error);
+    }
+  }
+  await makeArticleSent(article);
+}
+
 app.post("/api/scraping", async (_req, res) => {
   const userIdAndTokens = await validateTokens(await getAllUserIdAndTokens());
-  if (userIdAndTokens.length == 0) {
+  if (userIdAndTokens.length === 0) {
     res.json({ message: "No valid tokens" });
     return;
   }
   const config = functions.config();
   const { browser, page } = await getBrowserPage(false);
-  const textAndFile = await scrapeAndDownloadFile(page, { id: config.ra9.user_id, password: config.ra9.password });
-  browser.close();
-  console.log(textAndFile);
-  if (textAndFile) {
-    const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
-    let succeeded = [...userIdAndTokens];
-    succeeded = await notifyMessageToAll(succeeded, message);
-    // if (/\.pdf$/.test(textAndFile.filePath)) {
-    //   try {
-    //     await notifyPdfAsImages(textAndFile, async (message: string, imageBuffer?: Buffer): Promise<void> => {
-    //       succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
-    //     });
-    //   } catch(error) {
-    //     console.log(error);
-    //   }
-    // }
-    res.json({ message: "Succeeded", count: succeeded.length });
-  } else {
-    res.json({ mssage: "No messages" })
+  const credential = { id: config.ra9.user_id, password: config.ra9.password };
+  const articles = (await loginAndGetArticleList(page, credential)).reverse();
+  const unsent = await unsentArticles(articles);
+  if (unsent.length === 0) {
+    res.json({ message: "No unsent articles" });
+    return;
   }
+  for(let article of unsent) {
+    const textAndFile = await scrapeDetailPage(page, article.url);
+    await sendArticle(userIdAndTokens, article, textAndFile);
+  }
+  browser.close();
+  res.json({ message: "Succeeded" });
 });
 
 export const api = functions.https.onRequest(app);
