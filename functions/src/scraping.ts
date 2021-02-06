@@ -4,7 +4,7 @@ import * as pathLib from "path";
 import { loadPdf, convertPageAsImage } from "./pdfconv";
 
 const globalConfig = {
-  downloadPath: "./downloads",
+  downloadPath: "/tmp/downloads",
 }
 
 async function sleep(time: number): Promise<void> {

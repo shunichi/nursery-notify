@@ -174,11 +174,12 @@ async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: st
   formData.append("message", message);
   if (imageBuffer) {
     // console.log(`image size: ${imageBuffer.byteLength}`);
-    await fs.promises.mkdir("./tmp", { recursive: true });
-    await fs.promises.writeFile("./tmp/image.jpg", imageBuffer);
+    const tempFilePath = "/tmp/images/image.jpg";
+    await fs.promises.mkdir("/tmp/images", { recursive: true });
+    await fs.promises.writeFile(tempFilePath, imageBuffer);
     // Bufferをそのまま送ると 500 エラーになった
     // よくわからないが、一度ファイルに書いて送ると送れた
-    formData.append("imageFile", fs.createReadStream("./tmp/image.jpg"));
+    formData.append("imageFile", fs.createReadStream(tempFilePath));
     // formData.append("imageFile", imageBuffer, {
     //   filename: 'image.jpg',
     //   contentType: 'image/jpeg',
@@ -273,6 +274,55 @@ async function createOAuthToken(user: firebase.auth.DecodedIdToken, code: string
   await docRef.set({ lineNotifyToken: accessToken }, { merge: true });
   functions.logger.info("token saved", { accessToken });
   return accessToken;
+}
+
+async function isPdf(path: string): Promise<boolean> {
+  const handle = await fs.promises.open(path, "r");
+  const array = new Uint8Array(4);
+  const { bytesRead } = await handle.read(array, 0, 4);
+  if (bytesRead !== 4) return false;
+  return (array[0] === 0x25 && array[1] === 0x50 && array[2] === 0x44 && array[3] === 0x46);
+}
+
+async function sendArticle(userIdAndTokens: UserIdAndToken[], article: Article, textAndFile: TextAndFile): Promise<void> {
+  const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
+  let succeeded = [...userIdAndTokens];
+  succeeded = await notifyMessageToAll(succeeded, message);
+
+  if (await isPdf(textAndFile.filePath)) {
+    try {
+      const notifyFunc = async (message: string, imageBuffer?: Buffer): Promise<void> => {
+        succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
+      }
+      await notifyPdfAsImages(textAndFile, notifyFunc);
+    } catch(error) {
+      console.log(error);
+    }
+  } else {
+    functions.logger.info(`not pdf file: ${textAndFile.filePath}`);
+  }
+  await makeArticleSent(article);
+}
+
+async function scraping(): Promise<string> {
+  const userIdAndTokens = await validateTokens(await getAllUserIdAndTokens());
+  if (userIdAndTokens.length === 0) {
+    return "No valid tokens";
+  }
+  const config = functions.config();
+  const { browser, page } = await getBrowserPage(false);
+  const credential = { id: config.ra9.user_id, password: config.ra9.password };
+  const articles = (await loginAndGetArticleList(page, credential)).reverse();
+  const unsent = await unsentArticles(articles);
+  if (unsent.length === 0) {
+    return "No unsent articles";
+  }
+  for(let article of unsent) {
+    const textAndFile = await scrapeDetailPage(page, article.url);
+    await sendArticle(userIdAndTokens, article, textAndFile);
+  }
+  browser.close();
+  return "Succeeded";
 }
 
 const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
@@ -373,53 +423,19 @@ app.post("/api/line/revoke", async (req: any, res) => {
   }
 });
 
-async function sendArticle(userIdAndTokens: UserIdAndToken[], article: Article, textAndFile: TextAndFile): Promise<void> {
-  const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
-  let succeeded = [...userIdAndTokens];
-  succeeded = await notifyMessageToAll(succeeded, message);
-
-  if (/\.pdf$/.test(textAndFile.filePath)) {
-    try {
-      const notifyFunc = async (message: string, imageBuffer?: Buffer): Promise<void> => {
-        succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
-      }
-      await notifyPdfAsImages(textAndFile, notifyFunc);
-    } catch(error) {
-      console.log(error);
-    }
-  }
-  await makeArticleSent(article);
-}
-
-async function scraping(): Promise<string> {
-  const userIdAndTokens = await validateTokens(await getAllUserIdAndTokens());
-  if (userIdAndTokens.length === 0) {
-    return "No valid tokens";
-  }
-  const config = functions.config();
-  const { browser, page } = await getBrowserPage(false);
-  const credential = { id: config.ra9.user_id, password: config.ra9.password };
-  const articles = (await loginAndGetArticleList(page, credential)).reverse();
-  const unsent = await unsentArticles(articles);
-  if (unsent.length === 0) {
-    return "No unsent articles";
-  }
-  for(let article of unsent) {
-    const textAndFile = await scrapeDetailPage(page, article.url);
-    await sendArticle(userIdAndTokens, article, textAndFile);
-  }
-  browser.close();
-  return "Succeeded";
-}
-
 app.post("/api/scraping", async (_req, res) => {
   const message = await scraping();
   res.json({ message });
 });
 
-export const api = functions.https.onRequest(app);
+const runtimeOpts: functions.RuntimeOptions = {
+  timeoutSeconds: 300,
+  memory: "1GB"
+};
 
-export const scheduled = functions.pubsub.schedule("0 16,17,18,19 * * 1-5").onRun(async (_context) => {
+export const api = functions.runWith(runtimeOpts).https.onRequest(app);
+
+export const scheduled = functions.runWith(runtimeOpts).pubsub.schedule("0 16,17,18,19 * * 1-5").timeZone("Asia/Tokyo") .onRun(async (_context) => {
   const message = await scraping();
   functions.logger.info(message);
   return null;

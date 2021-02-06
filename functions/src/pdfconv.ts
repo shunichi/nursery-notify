@@ -5,7 +5,7 @@
 import * as Canvas from "canvas";
 import * as assert from "assert";
 import * as fs from "fs";
-const pdfjsLib = require('pdfjs-dist/es5/build/pdf.js');
+const pdfjsLib = require("pdfjs-dist/es5/build/pdf.js");
 
 type CanvasAndConext = {
   canvas: Canvas.Canvas | null;
@@ -42,10 +42,9 @@ class NodeCanvasFactory {
   }
 }
 
-export async function convertPageAsImage(pdfDocument: any, pageNo: number, imageType: 'jpeg' | 'png'): Promise<Buffer> {
-  console.log(`writePageAsImage ${pageNo}`);
+export async function convertPageAsImage(pdfDocument: any, pageNo: number, imageType: "jpeg" | "png"): Promise<Buffer> {
+  console.log(`convertPageAsImage ${pageNo}`);
   return pdfDocument.getPage(pageNo).then(function (page: any) {
-    // Render the page on a Node canvas with 100% scale.
     const viewport = page.getViewport({ scale: 1.0 });
     const canvasFactory = new NodeCanvasFactory();
     const canvasAndContext = canvasFactory.create(
@@ -62,14 +61,14 @@ export async function convertPageAsImage(pdfDocument: any, pageNo: number, image
     return renderTask.promise.then(() => {
       // Convert the canvas to an image buffer.
       const canvas = canvasAndContext.canvas;
-      var image = (imageType === 'jpeg') ? canvas!.toBuffer('image/jpeg') : canvas!.toBuffer('image/png');
+      var image = (imageType === "jpeg") ? canvas!.toBuffer("image/jpeg") : canvas!.toBuffer("image/png");
       canvasFactory.destroy(canvasAndContext);
       return image;
     });
   });
 }
 
-export async function writePageAsImage(pdfDocument: any, pageNo: number, fileName: string, imageType: 'jpeg' | 'png'): Promise<void> {
+export async function writePageAsImage(pdfDocument: any, pageNo: number, fileName: string, imageType: "jpeg" | "png"): Promise<void> {
   const image = await convertPageAsImage(pdfDocument, pageNo, imageType);
   return fs.promises.writeFile(fileName, image);
 }
@@ -124,7 +123,7 @@ export async function pdf2png(pdfPath: string): Promise<void> {
   for(let pageNo = 1; pageNo <= pages; pageNo++) {
     console.log(`writing ${pageNo}`);
     const fileName = `output${pageNo}.jpeg`
-    await writePageAsImage(pdfDocument, pageNo, fileName, 'jpeg')
+    await writePageAsImage(pdfDocument, pageNo, fileName, "jpeg")
     .then(() => {
       console.log(
         `Finished converting page ${pageNo} of PDF file to a image.`
