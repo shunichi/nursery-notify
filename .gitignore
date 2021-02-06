@@ -72,3 +72,4 @@ public/*.js.map
 .runtimeconfig.json
 *.pdf
 tmp/
+.firebaserc
