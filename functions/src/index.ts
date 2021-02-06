@@ -435,7 +435,11 @@ const runtimeOpts: functions.RuntimeOptions = {
 
 export const api = functions.runWith(runtimeOpts).https.onRequest(app);
 
-export const scheduled = functions.runWith(runtimeOpts).pubsub.schedule("0 16,17,18,19 * * 1-5").timeZone("Asia/Tokyo") .onRun(async (_context) => {
+export const scheduled = functions.runWith(runtimeOpts)
+  .pubsub
+  .schedule("0 16,17,18,19 * * 1-5")
+  .timeZone("Asia/Tokyo")
+  .onRun(async () => {
   const message = await scraping();
   functions.logger.info(message);
   return null;
