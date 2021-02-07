@@ -19,7 +19,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 if (location.hostname === "localhost") {
-  db.useEmulator("localhost", 8080);
+  // db.useEmulator("localhost", 8080);
   // firebase.auth().useEmulator('http://localhost:9099/');
 }
 
@@ -178,13 +178,16 @@ function parseQueryString(query: string): { state?: string, code?: string } {
 async function getApi<T>(path: string): Promise<AxiosResponse<T> | null> {
   const apiUrl = `${process.env.APP_BASE_URL}${path}`;
   const user = firebase.auth().currentUser;
+  // console.log("user", user);
   if (user == null) return null;
   const idToken = await user.getIdToken();
+  // console.log("idToken", idToken);
   if (idToken == null) return null;
   const headers = { 'Authorization': `Bearer ${idToken}` }
   try {
     return await axios.get<T>(apiUrl, { headers });
   } catch(error) {
+    console.log(error);
     return null;
   }
 }
@@ -226,6 +229,24 @@ async function getTokenStatus(): Promise<OAuthStatus> {
     return response.data;
   else
     return { tokenStatus: "unknown" };
+}
+
+type ArticleAttachedApiResponse = {
+  url: string;
+};
+async function getArticleAttached(path: string): Promise<ArticleAttachedApiResponse | null> {
+  try {
+    console.log("getArticleAttached", `api${path}`);
+    const response = await getApi<ArticleAttachedApiResponse>(`/api${path}`);
+    console.log(response);
+    if (response && response.data)
+      return response.data;
+    else
+      return null;
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
 }
 
 async function revokeToken(): Promise<TokenStatus> {
@@ -306,6 +327,15 @@ async function onAuthorizeFinished(user: firebase.User): Promise<void> {
   } else {
     globalState.oauthStatus = await getTokenStatus();
     console.log("tokenStatus:", globalState.oauthStatus);
+    if (window.location.pathname.startsWith('/articles/')) {
+      const data = await getArticleAttached(window.location.pathname);
+      if (data) {
+        window.location.href = data.url;
+        return;
+      } else {
+        alert("エラーが発生しました");
+      }
+    }
   }
   updateUI();
 }
@@ -320,37 +350,7 @@ function onAuthorizeRequired() {
 
 function googleAuth() {
   const provider = new firebase.auth.GoogleAuthProvider();
-  firebase.auth()
-  .signInWithPopup(provider)
-  .then((result) => {
-    const credential = result.credential;
-    if (credential == null ) {
-      console.log('credential == null');
-      return;
-    }
-
-    // This gives you a Google Access Token. You can use it to access the Google API.
-    // const token = credential.accessToken;
-    // The signed-in user info.
-    const user = result.user;
-    if (user == null)  {
-      console.log('user == null');
-      return;
-    }
-
-    console.log('auth finished');
-    onAuthorizeFinished(user);
-  }).catch((error) => {
-    // Handle Errors here.
-    console.log(error);
-    // const errorCode = error.code;
-    // const errorMessage = error.message;
-    // // The email of the user's account used.
-    // const email = error.email;
-    // // The firebase.auth.AuthCredential type that was used.
-    // const credential = error.credential;
-    // // ...
-  });
+  firebase.auth().signInWithRedirect(provider);
 }
 
 function signOut() {
@@ -361,9 +361,19 @@ function signOut() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  initUI();
+function initAuth() {
   const timeBegin = Date.now();
+  firebase.auth().getRedirectResult().then((result) => {
+    if (result.credential && result.user) {
+      console.log("getRedirectResult finished", result.credential, result.user);
+      onAuthorizeFinished(result.user);
+    } else {
+      console.log("getRedirectResult returns null credential or user", result.credential, result.user);
+    }
+  }).catch((error) => {
+    console.error("getRedirectResult faild", error);
+  });
+
   firebase.auth().onAuthStateChanged(function(user) {
     const timeAuthChanged = Date.now();
     console.log(`auth check time: ${(timeAuthChanged - timeBegin) / 1000}sec`);
@@ -375,4 +385,9 @@ document.addEventListener('DOMContentLoaded', () => {
       onAuthorizeRequired();
     }
   });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initUI();
+  initAuth();
 });

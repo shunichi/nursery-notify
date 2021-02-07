@@ -60,14 +60,21 @@ async function cleanupDirectory(path: string): Promise<void> {
   // console.log("cleanup finished.");
 }
 
-async function download(page: puppeteer.Page): Promise<string> {
+const downloadLinkSelector = ".sys-attached-file-dl-link a";
+
+async function download(page: puppeteer.Page): Promise<string | null> {
+  const linkElement = await page.$(downloadLinkSelector);
+  if (linkElement == null) {
+    console.log("no download link");
+    return null;
+  }
   await cleanupDirectory(globalConfig.downloadPath);
   await (page as any)._client.send("Page.setDownloadBehavior", {
     behavior : "allow",
     downloadPath: globalConfig.downloadPath,
   });
   await sleep(3000);
-  await page.click(".sys-attached-file-dl-link a");
+  await page.click(downloadLinkSelector);
   console.log("Downloading...")
   const downloadedFilePath = await waitDownload(globalConfig.downloadPath);
   console.log(`Downloaded: ${downloadedFilePath}`);
@@ -75,9 +82,10 @@ async function download(page: puppeteer.Page): Promise<string> {
 }
 
 export type TextAndFile = {
+  url: string;
   title: string;
   text: string;
-  filePath: string;
+  filePath: string | null;
 }
 
 async function getText(page: puppeteer.Page, selector: string): Promise<string | null> {
@@ -93,7 +101,7 @@ export async function scrapeDetailPage(page: puppeteer.Page, url: string): Promi
   console.log(`title: ${title}`)
   console.log(text);
   const filePath = await download(page);
-  return { title, text, filePath };
+  return { url, title, text, filePath };
 }
 
 export async function loginToRa9(page: puppeteer.Page, credential: Credential): Promise<void> {
@@ -160,8 +168,8 @@ const maxPages = 10;
 
 type NotifyMessageFunc = (message: string, imageBuffer?: Buffer) => Promise<void>;
 
-export async function notifyPdfAsImages(textAndFile: TextAndFile, notifyMessageFunc: NotifyMessageFunc) {
-  const pdfDocument = await loadPdf(textAndFile.filePath);
+export async function notifyPdfAsImages(filePath: string, notifyMessageFunc: NotifyMessageFunc) {
+  const pdfDocument = await loadPdf(filePath);
   const pages = Math.min(pdfDocument.numPages, maxPages);
   for(let pageNo = 1; pageNo <= pages; pageNo++) {
     const imageBuffer = await convertPageAsImage(pdfDocument, pageNo, "jpeg");

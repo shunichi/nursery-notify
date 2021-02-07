@@ -7,6 +7,7 @@ import * as FormData from "form-data";
 import * as corsLib from "cors";
 import * as express from "express";
 import * as cookieParser from "cookie-parser";
+import { DateTime } from "luxon";
 import { getBrowserPage, loginAndGetArticleList, scrapeDetailPage, notifyPdfAsImages, Article, TextAndFile } from "./scraping";
 
 const app = express();
@@ -41,14 +42,14 @@ async function getAllUserIdAndTokens(): Promise<UserIdAndToken[]> {
 }
 
 async function getUserIdAndToken(userId: string): Promise<UserIdAndToken | null> {
-  console.log(`userId: ${userId}`);
+  // console.log(`userId: ${userId}`);
   const docRef = await db.collection("users").doc(userId);
   const doc = await docRef.get();
-  console.log(doc);
+  // console.log(doc);
   if (!doc.exists) return null;
   const data = doc.data() as any;
-  console.log("data:", JSON.stringify(data));
-  console.log(`lineNotifyToken: ${data.lineNotifyToken}`);
+  // console.log("data:", JSON.stringify(data));
+  // console.log(`lineNotifyToken: ${data.lineNotifyToken}`);
   if (data.lineNotifyToken)
     return { uid: doc.id, lineNotifyToken: data.lineNotifyToken };
   else
@@ -91,7 +92,7 @@ async function checkTokenStatus(userIdAndToken: UserIdAndToken): Promise<StatusA
       const { status, message } = error.response.data;
       return { status, message };
     } else {
-      console.error(error);
+      functions.logger.error("status api error", { error });
       return null;
     }
   }
@@ -161,7 +162,7 @@ async function revokeToken(userIdAndToken: UserIdAndToken): Promise<TokenStatus>
       }
       return "unknown";
     } else {
-      console.error(error);
+      functions.logger.error("revoke api error", { error });
       return "unknown";
     }
   }
@@ -177,6 +178,7 @@ async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: st
     const tempFilePath = "/tmp/images/image.jpg";
     await fs.promises.mkdir("/tmp/images", { recursive: true });
     await fs.promises.writeFile(tempFilePath, imageBuffer);
+    functions.logger.info(`imageBuffer.length = ${imageBuffer.length}`);
     // Bufferをそのまま送ると 500 エラーになった
     // よくわからないが、一度ファイルに書いて送ると送れた
     formData.append("imageFile", fs.createReadStream(tempFilePath));
@@ -193,24 +195,31 @@ async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: st
       await axios.post("https://notify-api.line.me/api/notify", formData, { headers });
       succeeded.push(userIdAndToken);
     } catch (error) {
-      functions.logger.info("notify api error", { response: { status: error.response.status, data: error.response.data } });
+      functions.logger.error("notify api error", { response: { status: error.response.status, data: error.response.data } });
     }
   }
   return succeeded;
 }
 
 async function unsentArticles(articles: Article[]): Promise<Article[]> {
-  const querySnapShot = await db.collection("sent").where("url", "in", articles.map(a => a.url)).get();
+  const querySnapShot = await db.collection("articles").where("url", "in", articles.map(a => a.url)).get();
   const sent: string[] = []
   querySnapShot.forEach(doc => {
     const data = doc.data() as any;
-    sent.push(data.url);
+    if (data.sent) {
+      sent.push(data.url);
+    }
   });
   return articles.filter(a => !sent.includes(a.url));
 }
 
-async function makeArticleSent(article: Article): Promise<void> {
-  await db.collection("sent").add(article);
+async function makeArticleDoc(article: Article, filePath: string | null): Promise<string> {
+  const doc = await db.collection("articles").add({ ...article, filePath });
+  return doc.id
+}
+
+async function makeArticleSent(docId: string): Promise<void> {
+  await db.collection("articles").doc(docId).set({ sent: true }, { merge: true });
 }
 
 async function sendMessage(user: firebase.auth.DecodedIdToken, message: string): Promise<NotifyResponse | null> {
@@ -253,7 +262,7 @@ async function getAccessToken(code: string): Promise<string | null> {
     functions.logger.info("OAuth Token", { data: response.data });
     return response.data.access_token;
   } catch(error) {
-    functions.logger.error("api error", error);
+    functions.logger.error("oauth api error", { error });
     return null;
   }
 }
@@ -280,28 +289,82 @@ async function isPdf(path: string): Promise<boolean> {
   const handle = await fs.promises.open(path, "r");
   const array = new Uint8Array(4);
   const { bytesRead } = await handle.read(array, 0, 4);
+  await handle.close();
   if (bytesRead !== 4) return false;
   return (array[0] === 0x25 && array[1] === 0x50 && array[2] === 0x44 && array[3] === 0x46);
 }
 
-async function sendArticle(userIdAndTokens: UserIdAndToken[], article: Article, textAndFile: TextAndFile): Promise<void> {
-  const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
-  let succeeded = [...userIdAndTokens];
-  succeeded = await notifyMessageToAll(succeeded, message);
+const timeZone = "Asia/Tokyo";
 
-  if (await isPdf(textAndFile.filePath)) {
+async function storeFileToStorage(filePath: string, name: string, extension: string | null): Promise<string> {
+  const bucket = firebase.storage().bucket();
+  const time = DateTime.fromObject({ zone: timeZone });
+  const timestr = time.toFormat("yyyyLLddhhmmss");
+  const outputPath = extension ? `${timestr}/${name}.${extension}` : `${timestr}/${name}`;
+  const file = bucket.file(outputPath);
+  const write = file.createWriteStream({ private: true });
+  const read = fs.createReadStream(filePath);
+  await new Promise((resolve, reject) => {
+    read.on("error", error => {
+      reject(error);
+    })
+    write.on("error", error => {
+      reject(error);
+    });
+    write.on("finish", () => {
+      resolve(null);
+    });
+    read.pipe(write);
+  });
+  return outputPath;
+}
+
+function makeMessage(textAndFile: TextAndFile) {
+  const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
+  return [message, textAndFile.url].join("\n");
+}
+
+async function sendArticle(userIdAndTokens: UserIdAndToken[], article: Article, textAndFile: TextAndFile): Promise<void> {
+  let succeeded = [...userIdAndTokens];
+  let storagePath: string | null = null;
+  let pdf = false;
+  if (textAndFile.filePath) {
+    pdf = await isPdf(textAndFile.filePath);
+    storagePath = await storeFileToStorage(textAndFile.filePath, textAndFile.title, pdf ? "pdf" : null);
+  }
+  const docId = await makeArticleDoc(article, storagePath);
+  succeeded = await notifyMessageToAll(succeeded, makeMessage(textAndFile));
+  if (pdf) {
     try {
       const notifyFunc = async (message: string, imageBuffer?: Buffer): Promise<void> => {
         succeeded = await notifyMessageToAll(succeeded, message, imageBuffer);
       }
-      await notifyPdfAsImages(textAndFile, notifyFunc);
+      await notifyPdfAsImages(textAndFile.filePath!, notifyFunc);
     } catch(error) {
-      console.log(error);
+      functions.logger.error("notifyPdfAsImages faild", error);
     }
   } else {
     functions.logger.info(`not pdf file: ${textAndFile.filePath}`);
   }
-  await makeArticleSent(article);
+  await makeArticleSent(docId);
+}
+
+async function getSignedUrl(path: string): Promise<string> {
+  const expirationMinutes = 1;
+  const bucket = firebase.storage().bucket();
+  const file = bucket.file(path)
+  const time = DateTime.fromObject({ zone: timeZone });
+  const signedUrl = await file.getSignedUrl({ action: "read", expires: time.plus({ minutes: expirationMinutes }).toUTC().toISO() })
+  return signedUrl[0];
+}
+
+async function getArticleAttachedFileSignedUrl(articleId: string): Promise<string | null> {
+  const docRef = db.collection("articles").doc(articleId);
+  const doc = await docRef.get();
+  if (!doc.exists) return null;
+  const data = doc.data() as any;
+  if (!data.filePath) return null;
+  return getSignedUrl(data.filePath);
 }
 
 async function scraping(): Promise<string> {
@@ -313,7 +376,7 @@ async function scraping(): Promise<string> {
   const { browser, page } = await getBrowserPage(false);
   const credential = { id: config.ra9.user_id, password: config.ra9.password };
   const articles = (await loginAndGetArticleList(page, credential)).reverse();
-  const unsent = await unsentArticles(articles);
+  const unsent = (await unsentArticles(articles));
   if (unsent.length === 0) {
     return "No unsent articles";
   }
@@ -366,7 +429,7 @@ const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
     next();
     return;
   } catch (error) {
-    console.error("Error while verifying Firebase ID token:", error);
+    functions.logger.error("Error while verifying Firebase ID token", { error });
     res.status(403).send("Unauthorized");
     return;
   }
@@ -422,6 +485,16 @@ app.post("/api/line/revoke", async (req: any, res) => {
     res.json({ tokenStatus: "noToken" });
   }
 });
+
+app.get("/api/articles/:articleId/attached", async (req, res) => {
+  functions.logger.info("/api/articles/:articleId/attached", { params: req.params });
+  const signedUrl = await getArticleAttachedFileSignedUrl(req.params.articleId)
+  if (signedUrl) {
+    res.json({ url: signedUrl });
+  } else {
+    res.status(404).json({ message: "not found" });
+  }
+})
 
 app.post("/api/scraping", async (_req, res) => {
   const message = await scraping();

@@ -42,10 +42,10 @@ class NodeCanvasFactory {
   }
 }
 
-export async function convertPageAsImage(pdfDocument: any, pageNo: number, imageType: "jpeg" | "png"): Promise<Buffer> {
+export async function convertPageAsImage(pdfDocument: any, pageNo: number, imageType: "jpeg" | "png", scale: number = 4.0): Promise<Buffer> {
   console.log(`convertPageAsImage ${pageNo}`);
   return pdfDocument.getPage(pageNo).then(function (page: any) {
-    const viewport = page.getViewport({ scale: 1.0 });
+    const viewport = page.getViewport({ scale });
     const canvasFactory = new NodeCanvasFactory();
     const canvasAndContext = canvasFactory.create(
       viewport.width,
