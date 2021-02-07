@@ -15,6 +15,9 @@
         body { border-top: 16px solid #ffa100; }
       }
 
+      #status-heading {
+        font-size: 1.5rem;
+      }
       .button-wrapper {
         max-width: 400px;
         margin: 2rem auto 0;
@@ -48,12 +51,8 @@
     <div class="mt-5">
       <h1 class="text-center">今日の保育園(非公式)</h1>
       <p id="load" class="mt-3">Loading&hellip;</p>
-      <div class="button-wrapper">
-        <button id="google-auth-button" class="btn btn-primary d-none">Googleアカウントでログインする</button>
-        <button id="signout-button" class="btn btn-outline-secondary d-none">ログアウトする</button>
-      </div>
       <div id="invitation-code-wrapper" class="button-wrapper">
-        <div class="text-center mb-2">招待コードを入力してください。</div>
+        <div class="text-center mb-2">招待コードを入力してください</div>
         <div class="d-flex justify-content-center">
           <input id="invitation-code-input" type="text" class="form-control" placeholder="招待コード">
           <button id="invitation-button" class="btn btn-primary text-nowrap">送信</button>
@@ -61,15 +60,18 @@
       </div>
       <div id="message-wrapper" class="d-none">
         <div class="text-center">
-          LINE連携が完了しました。<br>
-          「LINE Notify」が友達に追加されていますので、<br>送信先LINEグループに参加させてくだい。
+          <h2 id="status-heading" class="mb-3">LINE連携が完了しました</h2>
+          <ul class="text-start">
+            <li>「LINE Notify」が友達に追加されていますので、送信先LINEグループに参加させてくだい</li>
+            <li>よかったら家族も同じLINEグループに招待してください</li>
+          </ul>
         </div>
         <div class="text-center mt-3">
-          夕方に保育園からのお知らせがLINEに送られます。
+          夕方に保育園からのお知らせがLINEに送られます
         </div>
         <div class="group-box">
           <div class="text-center">
-            LINEにテストメッセージを送信できます。
+            LINEにテストメッセージを送信できます
             <div id="line-notify-target"></div>
           </div>
           <div class="d-flex justify-content-center">
@@ -79,12 +81,17 @@
         </div>
       </div>
       <div id="line-notify-auth-wrapper" class="button-wrapper d-none">
-        <div class="text-center mb-3">LINE連携すると保育園からのお知らせが<br>LINEに送信されるようになります。</div>
-        <div class="text-center mb-3">下のボタンを押す前にお知らせ送信先の<br>LINEグループを作っておいてください。</div>
+        <h2 id="status-heading" class="mb-3">LINE連携しましょう</h2>
+        <div class="text-center mb-3">LINE連携すると保育園からのお知らせが<br>LINEに送信されるようになります</div>
+        <div class="text-center mb-3">下のボタンを押す前にお知らせ送信先の<br>LINEグループを作っておいてください</div>
         <button id="line-notify-auth" class="btn btn-success">LINE連携する</button>
       </div>
       <div class="button-wrapper">
         <button id="line-notify-revoke" class="btn btn-danger d-none">LINE連携を解除</button>
+      </div>
+      <div class="button-wrapper mt-5">
+        <button id="google-auth-button" class="btn btn-primary d-none">Googleアカウントでログインする</button>
+        <button id="signout-button" class="btn btn-outline-secondary d-none">ログアウトする</button>
       </div>
     </div>
   </body>

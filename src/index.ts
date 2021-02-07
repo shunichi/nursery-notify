@@ -339,19 +339,21 @@ async function sendInvitationCode(code: string): Promise<void> {
 }
 
 async function sendLineMessage(message: string): Promise<void> {
+  if (message === "") return;
   if (globalState.status.oauthStatus.tokenStatus !== "valid") {
     return;
   }
   const button = document.getElementById('send-message-button');
   const input = document.getElementById('message-text-input') as HTMLInputElement | null;
-  if (button) { button.classList.add('disabled'); }
-  if (input) { input.disabled = true; }
+  if (button == null || input == null) return;
+  button.classList.add('disabled');
+  input.disabled = true;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   try {
     const response = await postApi<NotifyApiResponse>('/api/line/notify', { message });
     if (response) {
       console.log(response.data);
-      if (input) { input.value = ''; }
+      input.value = '';
     }
     else {
       console.log('/api/line/notify no response');
@@ -359,8 +361,8 @@ async function sendLineMessage(message: string): Promise<void> {
   } catch {
     console.log('/api/line/notify caught exception');
   } finally {
-    if (button) { button.classList.remove('disabled'); }
-    if (input) { input.disabled = false; }
+    button.classList.remove('disabled');
+    input.disabled = false;
   }
 }
 
