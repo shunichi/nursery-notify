@@ -1,7 +1,9 @@
 import * as fs from "fs";
 import * as functions from "firebase-functions";
 import * as firebase from "firebase-admin";
-import axios, { AxiosError } from "axios";
+import type { Timestamp } from "@google-cloud/firestore";
+import axios from "axios";
+import type { AxiosError } from "axios";
 import * as querystring from "querystring";
 import * as FormData from "form-data";
 import * as corsLib from "cors";
@@ -54,14 +56,6 @@ async function getUserIdAndToken(userId: string): Promise<UserIdAndToken | null>
     return { uid: doc.id, lineNotifyToken: data.lineNotifyToken };
   else
     return null;
-}
-
-async function permittedUser(user: firebase.auth.DecodedIdToken): Promise<boolean> {
-  return true;
-
-  // if (user.email == null ) return false;
-  // const querySnapshot = await db.collection("permittedUsers").where("email", "==", user.email).get()
-  // return querySnapshot.size > 0;
 }
 
 type StatusApiResponse = {
@@ -274,12 +268,6 @@ async function createOAuthToken(user: firebase.auth.DecodedIdToken, code: string
     return null;
   }
 
-  if (!await permittedUser(user)) {
-    const { uid, name, email } = user;
-    console.log("Unpermitted user: ", { uid, name, email });
-    return null;
-  }
-
   await docRef.set({ lineNotifyToken: accessToken }, { merge: true });
   functions.logger.info("token saved", { accessToken });
   return accessToken;
@@ -367,6 +355,24 @@ async function getArticleAttachedFileSignedUrl(articleId: string): Promise<strin
   return getSignedUrl(data.filePath);
 }
 
+async function isActivatedUser(user: firebase.auth.DecodedIdToken): Promise<boolean> {
+  const doc = await db.collection("activatedUsers").doc(user.uid).get();
+  return doc.exists;
+}
+
+async function activateAccount(user: firebase.auth.DecodedIdToken, code: string): Promise<boolean> {
+  const docRef = db.collection("activationCodes").doc(code);
+  const doc = await docRef.get();
+  if (!doc.exists) return false;
+  const data = doc.data() as any;
+  if (!data.expires) return false;
+  const expires = data.expires as Timestamp;
+  const now = new Date();
+  if (now > expires.toDate()) return false;
+  await db.collection("activatedUsers").doc(user.uid).set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+  return true;
+}
+
 async function scraping(): Promise<string> {
   const userIdAndTokens = await validateTokens(await getAllUserIdAndTokens());
   if (userIdAndTokens.length === 0) {
@@ -435,9 +441,24 @@ const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
   }
 };
 
+function isActivationRequiredPath(path: string): boolean {
+  const inactiveAllowedPaths = ["/api/status", "/api/activate", "/api/scraping"];;
+  return inactiveAllowedPaths.indexOf(path) < 0;
+}
+
+const ensureActivatedUser = async (req: any, res: any, next: any) => {
+  const activated = await isActivatedUser(req.user);
+  if (isActivationRequiredPath(req.path) && !activated) {
+    res.status(403).json({ message: "activation required" });
+    return;
+  }
+  next();
+}
+
 app.use(cors);
 app.use(cookieParser());
 app.use(validateFirebaseIdToken);
+app.use(ensureActivatedUser);
 
 app.post("/api/oauth/callback", async (req: any, res:  any) => {
   functions.logger.info("/api/oauth/callback", { body: req.body, cookies: req.cookies });
@@ -462,28 +483,41 @@ app.post("/api/line/notify", async (req: any, res): Promise<void> => {
   if (response) {
     res.json(response);
   } else {
-    res.json({ message: "faild"});
+    res.json({ message: "faild" });
   }
 });
 
-app.get("/api/line/status", async (req: any, res) => {
-  const userIdAndToken = await getUserIdAndToken(req.user.uid);
+app.get("/api/status", async (req: any, res) => {
+  const [userIdAndToken, activated] = await Promise.all([getUserIdAndToken(req.user.uid), isActivatedUser(req.user)]);
+  let oauthStatus: OAuthStatus;
   if (userIdAndToken) {
-    const oauthStatus = await validateToken(userIdAndToken);
-    res.json(oauthStatus);
+    oauthStatus = await validateToken(userIdAndToken);
   } else {
-    res.json({ tokenStatus: "noToken" });
+    oauthStatus = { tokenStatus: "noToken" }
+  }
+  res.json({ oauthStatus, activated });
+});
+
+
+app.post("/api/activate", async (req: any, res) => {
+  const { code } = req.body;
+  if (await activateAccount(req.user, code)) {
+    res.json({ message: "succeeded" });
+  } else {
+    res.status(422).json({ message: "faild" });
   }
 });
 
 app.post("/api/line/revoke", async (req: any, res) => {
-  const userIdAndToken = await getUserIdAndToken(req.user.uid);
+  const [userIdAndToken, activated] = await Promise.all([getUserIdAndToken(req.user.uid), isActivatedUser(req.user)]);
+  let oauthStatus: OAuthStatus;
   if (userIdAndToken) {
     const tokenStatus = await revokeToken(userIdAndToken);
-    res.json({ tokenStatus });
+    oauthStatus = { tokenStatus };
   } else {
-    res.json({ tokenStatus: "noToken" });
+    oauthStatus = { tokenStatus: "noToken" };
   }
+  res.json({ oauthStatus, activated });
 });
 
 app.get("/api/articles/:articleId/attached", async (req, res) => {

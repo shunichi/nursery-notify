@@ -74,6 +74,7 @@ export async function writePageAsImage(pdfDocument: any, pageNo: number, fileNam
 }
 
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function writeRawImageData(pdfDocument: any, pageNo: number) {
   pdfDocument.getPage(pageNo).then((page:any) => {
     page.getOperatorList().then(function (ops: any) {

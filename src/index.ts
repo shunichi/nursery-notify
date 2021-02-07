@@ -4,7 +4,7 @@ import firebase from "firebase/";
 import 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import Cookies from 'js-cookie';
-import axios, { AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosResponse } from 'axios';
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -30,19 +30,51 @@ type OAuthStatus = {
   targetType?: TargetType;
   target?: string;
 };
+type StatusApiResponse = {
+  oauthStatus: OAuthStatus;
+  activated: boolean;
+};
+
+type NotifyApiResponse = {
+  status: number;
+  message: string;
+};
+
+type ArticleAttachedApiResponse = {
+  url: string;
+};
+
 type GlobalState = {
   userName: string | null;
   userId: string | null;
-  oauthStatus: OAuthStatus;
+  status: StatusApiResponse;
 };
+
+const defaultStatus = (): StatusApiResponse => { return { oauthStatus: { tokenStatus: "unknown" }, activated: false }; };
 const globalState: GlobalState = {
   userName: null,
   userId: null,
-  oauthStatus: { tokenStatus: "unknown" },
+  status: defaultStatus(),
 };
+
+function processInvitationCode() {
+  const params = parseQueryString(window.location.search);
+  if (params.invitation) {
+    Cookies.set('invitation', params.invitation);
+  }
+
+  const input = document.getElementById('invitation-code-input') as HTMLInputElement | null;
+  if (input) {
+    const invitationCode = Cookies.get('invitation');
+    if (invitationCode) {
+      input.value = invitationCode;
+    }
+  }
+}
 
 function initUI() {
   initAuthButtons();
+  initInvitationInput();
   initMessageInput();
   initOAuthButton();
   initRevokeButton();
@@ -52,18 +84,26 @@ function updateUI() {
   // console.log('updateUI:', globalState);
   const signInedButtonIds = ['signout-button'];
   const signOutedButtonIds = ['google-auth-button'];
-  const oauthableButtonIds = ['line-notify-auth'];
+  const oauthableButtonIds = ['line-notify-auth-wrapper'];
   const withTokenButtonIds = ['message-wrapper', 'line-notify-revoke'];
+  const invitationCodeWrapper = document.getElementById('invitation-code-wrapper');
   const signedIn = (globalState.userId !== null);
-  const withToken = (globalState.oauthStatus.tokenStatus === "valid");
+  const withToken = (globalState.status.oauthStatus.tokenStatus === "valid");
   const target = document.getElementById('line-notify-target')
+
   if (target) {
-    if (globalState.oauthStatus.target) {
+    if (globalState.status.oauthStatus.target) {
       target.classList.remove('d-none');
-      target.innerText = `メッセージ送信先: ${globalState.oauthStatus.target}`;
+      target.innerText = `（送信先: ${globalState.status.oauthStatus.target}）`;
     } else {
       target.classList.add('d-none');
     }
+  }
+  const showInvitationCodeInput = globalState.userId != null && !globalState.status.activated;
+  const showLineAuthButton = globalState.status.oauthStatus.tokenStatus === "noToken" && !showInvitationCodeInput;
+
+  if (invitationCodeWrapper) {
+    invitationCodeWrapper.classList.toggle("d-block", showInvitationCodeInput);
   }
   signInedButtonIds.forEach((id) => {
     const button = document.getElementById(id);
@@ -80,13 +120,13 @@ function updateUI() {
   withTokenButtonIds.forEach((id) => {
     const button = document.getElementById(id);
     if (button) {
-      button.classList.toggle('d-none', !withToken);
+      button.classList.toggle('d-none', !withToken || showInvitationCodeInput);
     }
   });
   oauthableButtonIds.forEach((id) => {
     const button = document.getElementById(id);
     if (button) {
-      button.classList.toggle('d-none', globalState.oauthStatus.tokenStatus !== "noToken");
+      button.classList.toggle('d-none', !showLineAuthButton);
     }
   });
 }
@@ -143,9 +183,25 @@ function initRevokeButton() {
     button.addEventListener('click', async (e) => {
       e.preventDefault();
       if (!window.confirm('LINE通知を解除してよろしいですか？')) return;
-      const tokenStatus = await revokeToken();
-      globalState.oauthStatus = { tokenStatus };
+      globalState.status = await revokeToken();
       updateUI();
+    });
+  }
+}
+
+function initInvitationInput() {
+  const button = document.getElementById('invitation-button');
+  const input = document.getElementById('invitation-code-input') as HTMLInputElement | null;
+  if (button && input) {
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      sendInvitationCode(input.value);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        sendInvitationCode(input.value);
+      }
     });
   }
 }
@@ -170,7 +226,7 @@ function initMessageInput() {
   }
 }
 
-function parseQueryString(query: string): { state?: string, code?: string } {
+function parseQueryString(query: string): { state?: string, code?: string, invitation?: string } {
   const searchParams = new URLSearchParams(query);
   return [...searchParams.entries()].reduce((obj, e) => ({...obj, [e[0]]: e[1]}), {});
 }
@@ -222,18 +278,15 @@ async function createLineNotifyAccessToken(): Promise<string | null> {
   }
 }
 
-type StatusApiResponse = OAuthStatus;
-async function getTokenStatus(): Promise<OAuthStatus> {
-  const response = await getApi<StatusApiResponse>("/api/line/status");
-  if (response && response.data)
-    return response.data;
-  else
-    return { tokenStatus: "unknown" };
+async function getStatus(): Promise<void> {
+  const response = await getApi<StatusApiResponse>("/api/status");
+  if (response && response.data) {
+    globalState.status = response.data;
+  } else {
+    globalState.status = defaultStatus();
+  }
 }
 
-type ArticleAttachedApiResponse = {
-  url: string;
-};
 async function getArticleAttached(path: string): Promise<ArticleAttachedApiResponse | null> {
   try {
     console.log("getArticleAttached", `api${path}`);
@@ -249,32 +302,44 @@ async function getArticleAttached(path: string): Promise<ArticleAttachedApiRespo
   }
 }
 
-async function revokeToken(): Promise<TokenStatus> {
+async function revokeToken(): Promise<StatusApiResponse> {
   const response = await postApi<StatusApiResponse>("/api/line/revoke", {});
-  if (response && response.data && response.data.tokenStatus)
-    return response.data.tokenStatus;
+  if (response && response.data)
+    return response.data;
   else
-    return "unknown";
+    return defaultStatus();
 }
 
-async function getLineNotifyAccessToken(): Promise<string | null> {
-  if (globalState.userId == null) return null;
-  const docRef = db.collection('users').doc(globalState.userId);
-  const doc = await docRef.get();
-  if (doc.exists) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data: any = doc.data();
-    if (data.lineNotifyToken) {
-      console.log(`lineNotifyToken: ${data.lineNotifyToken}`);
-      return data.lineNotifyToken;
+async function sendInvitationCode(code: string): Promise<void> {
+  const button = document.getElementById('invitation-button');
+  const input = document.getElementById('invitation-code-input') as HTMLInputElement | null;
+  if (input == null || button == null) return;
+
+  button.classList.add('disabled');
+  input.disabled = true;
+  try {
+    const response = await postApi<NotifyApiResponse>('/api/activate', { code });
+    if (response) {
+      console.log(response.data);
+      input.value = '';
+      await getStatus();
+      updateUI();
+      history.replaceState(null, '', '/');
+      Cookies.remove('invitation');
     }
+    else {
+      console.log('/api/activate no response');
+    }
+  } catch (error) {
+    console.log('/api/activate faild', error?.response.data);
+  } finally {
+    button.classList.remove('disabled');
+    input.disabled = false;
   }
-  console.log(`lineNotifyToken not found`);
-  return null;
 }
 
 async function sendLineMessage(message: string): Promise<void> {
-  if (globalState.oauthStatus.tokenStatus !== "valid") {
+  if (globalState.status.oauthStatus.tokenStatus !== "valid") {
     return;
   }
   const button = document.getElementById('send-message-button');
@@ -283,7 +348,7 @@ async function sendLineMessage(message: string): Promise<void> {
   if (input) { input.disabled = true; }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   try {
-    const response = await postApi<any>('/api/line/notify', { message });
+    const response = await postApi<NotifyApiResponse>('/api/line/notify', { message });
     if (response) {
       console.log(response.data);
       if (input) { input.value = ''; }
@@ -316,17 +381,17 @@ async function onAuthorizeFinished(user: firebase.User): Promise<void> {
     const params = parseQueryString(window.location.search);
     if (params.code != null) {
       if (await createLineNotifyAccessToken()) {
-        globalState.oauthStatus = await getTokenStatus();
+        await getStatus();
       } else {
         alert('LINE連携処理に失敗しました');
       }
     } else {
-      globalState.oauthStatus = await getTokenStatus();
+      await getStatus();
     }
     history.replaceState(null, '', '/');
   } else {
-    globalState.oauthStatus = await getTokenStatus();
-    console.log("tokenStatus:", globalState.oauthStatus);
+    await getStatus();
+    console.log("status:", globalState.status);
     if (window.location.pathname.startsWith('/articles/')) {
       const data = await getArticleAttached(window.location.pathname);
       if (data) {
@@ -357,7 +422,7 @@ function signOut() {
   firebase.auth().signOut().then(() => {
     globalState.userId = null;
     globalState.userName = null;
-    globalState.oauthStatus = { tokenStatus: "unknown" };
+    globalState.status = defaultStatus();
   });
 }
 
@@ -365,10 +430,10 @@ function initAuth() {
   const timeBegin = Date.now();
   firebase.auth().getRedirectResult().then((result) => {
     if (result.credential && result.user) {
-      console.log("getRedirectResult finished", result.credential, result.user);
+      console.log("getRedirectResult finished");
       onAuthorizeFinished(result.user);
     } else {
-      console.log("getRedirectResult returns null credential or user", result.credential, result.user);
+      console.log("getRedirectResult returns null credential or user");
     }
   }).catch((error) => {
     console.error("getRedirectResult faild", error);
@@ -388,6 +453,7 @@ function initAuth() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  processInvitationCode();
   initUI();
   initAuth();
 });

@@ -16,14 +16,13 @@
       }
 
       .button-wrapper {
-        margin-top: 2rem;
+        max-width: 400px;
+        margin: 2rem auto 0;
         text-align: center;
       }
       #message-wrapper {
         max-width: 400px;
         margin: 2rem auto;
-        display: flex;
-        justify-content: center;
       }
       #message-text-input {
         margin-right: 1rem;
@@ -31,23 +30,61 @@
       #line-notify-target {
         margin-bottom: 1rem;
       }
+      #invitation-code-wrapper {
+        display: none;
+      }
+      #invitation-code-input {
+        margin-right: 1rem;
+      }
+      .group-box {
+        margin-top: 1rem;
+        border: 1px solid #6c757d;
+        border-radius: 4px;
+        padding: 1rem;
+      }
     </style>
   </head>
   <body>
     <div class="mt-5">
-      <p id="load">Loading&hellip;</p>
+      <h1 class="text-center">今日の保育園(非公式)</h1>
+      <p id="load" class="mt-3">Loading&hellip;</p>
       <div class="button-wrapper">
         <button id="google-auth-button" class="btn btn-primary d-none">Googleアカウントでログインする</button>
         <button id="signout-button" class="btn btn-outline-secondary d-none">ログアウトする</button>
       </div>
+      <div id="invitation-code-wrapper" class="button-wrapper">
+        <div class="text-center mb-2">招待コードを入力してください。</div>
+        <div class="d-flex justify-content-center">
+          <input id="invitation-code-input" type="text" class="form-control" placeholder="招待コード">
+          <button id="invitation-button" class="btn btn-primary text-nowrap">送信</button>
+        </div>
+      </div>
       <div id="message-wrapper" class="d-none">
-        <input type="text" id="message-text-input" class="form-control" placeholder="メッセージ">
-        <button id="send-message-button" class="btn btn-primary text-nowrap">テスト送信</button>
+        <div class="text-center">
+          LINE連携が完了しました。<br>
+          「LINE Notify」が友達に追加されていますので、<br>送信先LINEグループに参加させてくだい。
+        </div>
+        <div class="text-center mt-3">
+          夕方に保育園からのお知らせがLINEに送られます。
+        </div>
+        <div class="group-box">
+          <div class="text-center">
+            LINEにテストメッセージを送信できます。
+            <div id="line-notify-target"></div>
+          </div>
+          <div class="d-flex justify-content-center">
+            <input type="text" id="message-text-input" class="form-control" placeholder="メッセージ">
+            <button id="send-message-button" class="btn btn-primary text-nowrap">送信</button>
+          </div>
+        </div>
+      </div>
+      <div id="line-notify-auth-wrapper" class="button-wrapper d-none">
+        <div class="text-center mb-3">LINE連携すると保育園からのお知らせが<br>LINEに送信されるようになります。</div>
+        <div class="text-center mb-3">下のボタンを押す前にお知らせ送信先の<br>LINEグループを作っておいてください。</div>
+        <button id="line-notify-auth" class="btn btn-success">LINE連携する</button>
       </div>
       <div class="button-wrapper">
-        <div id="line-notify-target"></div>
-        <button id="line-notify-auth" class="btn btn-success d-none">LINE通知の設定</button>
-        <button id="line-notify-revoke" class="btn btn-danger d-none">LINE通知を解除</button>
+        <button id="line-notify-revoke" class="btn btn-danger d-none">LINE連携を解除</button>
       </div>
     </div>
   </body>
