@@ -164,32 +164,37 @@ async function revokeToken(userIdAndToken: UserIdAndToken): Promise<TokenStatus>
 }
 
 async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: string, imageBuffer?: Buffer): Promise<UserIdAndToken[]> {
-  // console.log("notifyMessageToAll", userIdAndTokens, message, imageBuffer?.length);
-  const formData = new FormData();
-  formData.append("message", message);
+  functions.logger.info("notifyMessageToAll", { message, bufferLength: imageBuffer?.length });
+  const tempFilePath = "/tmp/images/image.jpg";
   if (imageBuffer) {
     // console.log(`image size: ${imageBuffer.byteLength}`);
-    const tempFilePath = "/tmp/images/image.jpg";
     await fs.promises.mkdir("/tmp/images", { recursive: true });
     await fs.promises.writeFile(tempFilePath, imageBuffer);
     functions.logger.info(`imageBuffer.length = ${imageBuffer.length}`);
-    // Bufferをそのまま送ると 500 エラーになった
-    // よくわからないが、一度ファイルに書いて送ると送れた
-    formData.append("imageFile", fs.createReadStream(tempFilePath));
-    // formData.append("imageFile", imageBuffer, {
-    //   filename: 'image.jpg',
-    //   contentType: 'image/jpeg',
-    //   knownLength: imageBuffer.length,
-    //   });
   }
+
   const succeeded: UserIdAndToken[] = [];
   for(let userIdAndToken of userIdAndTokens) {
+    const formData = new FormData();
+    formData.append("message", message);
+    if (imageBuffer) {
+      // Bufferをそのまま送ると 500 エラーになった
+      // よくわからないが、一度ファイルに書いて送ると送れた
+      formData.append("imageFile", fs.createReadStream(tempFilePath));
+      // formData.append("imageFile", imageBuffer, {
+      //   filename: 'image.jpg',
+      //   contentType: 'image/jpeg',
+      //   knownLength: imageBuffer.length,
+      //   });
+    }
+    functions.logger.info("call notify api", { uid: userIdAndToken.uid });
     const headers = { ...formData.getHeaders(), "Authorization": `Bearer ${userIdAndToken.lineNotifyToken}` };
     try {
-      await axios.post("https://notify-api.line.me/api/notify", formData, { headers });
+      const response = await axios.post("https://notify-api.line.me/api/notify", formData, { headers });
+      functions.logger.info("finishd notify api", { response: response.data });
       succeeded.push(userIdAndToken);
     } catch (error) {
-      functions.logger.error("notify api error", { response: { status: error.response.status, data: error.response.data } });
+      functions.logger.error("notify api error", { response: { status: error.response?.status, data: error.response?.data } });
     }
   }
   return succeeded;
@@ -285,6 +290,7 @@ async function isPdf(path: string): Promise<boolean> {
 const timeZone = "Asia/Tokyo";
 
 async function storeFileToStorage(filePath: string, name: string, extension: string | null): Promise<string> {
+  functions.logger.info("storeFileToStorage", { filePath, name, extension });
   const bucket = firebase.storage().bucket();
   const time = DateTime.fromObject({ zone: timeZone });
   const timestr = time.toFormat("yyyyLLddhhmmss");
@@ -294,9 +300,11 @@ async function storeFileToStorage(filePath: string, name: string, extension: str
   const read = fs.createReadStream(filePath);
   await new Promise((resolve, reject) => {
     read.on("error", error => {
+      functions.logger.info("storeFileToStorage read error", { error });
       reject(error);
     })
     write.on("error", error => {
+      functions.logger.info("storeFileToStorage write error", { error });
       reject(error);
     });
     write.on("finish", () => {
@@ -304,6 +312,7 @@ async function storeFileToStorage(filePath: string, name: string, extension: str
     });
     read.pipe(write);
   });
+  functions.logger.info("storeFileToStorage finished", { outputPath });
   return outputPath;
 }
 
@@ -395,6 +404,8 @@ async function scraping(): Promise<string> {
 }
 
 const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
+  functions.logger.info(req.path, { body: req.body, cookies: req.cookies });
+
   if (req.path === "/api/scraping") {
     if (req.headers.authorization && req.headers.authorization === `Bearer ${functions.config().app.scraping_api_token}`) {
       next();
@@ -418,7 +429,7 @@ const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
 
   let idToken;
   if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
-    console.log("Found \"Authorization\" header");
+    // console.log("Found \"Authorization\" header");
     // Read the ID Token from the Authorization header.
     idToken = req.headers.authorization.split("Bearer ")[1];
   } else {
@@ -430,7 +441,7 @@ const validateFirebaseIdToken = async (req: any, res: any, next: any) => {
 
   try {
     const decodedIdToken = await firebase.auth().verifyIdToken(idToken);
-    console.log("ID Token correctly decoded", decodedIdToken);
+    // console.log("ID Token correctly decoded", decodedIdToken);
     req.user = decodedIdToken;
     next();
     return;
@@ -447,10 +458,12 @@ function isActivationRequiredPath(path: string): boolean {
 }
 
 const ensureActivatedUser = async (req: any, res: any, next: any) => {
-  const activated = await isActivatedUser(req.user);
-  if (isActivationRequiredPath(req.path) && !activated) {
-    res.status(403).json({ message: "activation required" });
-    return;
+  if (isActivationRequiredPath(req.path)) {
+    const activated = await isActivatedUser(req.user);
+    if (!activated) {
+      res.status(403).json({ message: "activation required" });
+      return;
+    }
   }
   next();
 }
@@ -461,7 +474,6 @@ app.use(validateFirebaseIdToken);
 app.use(ensureActivatedUser);
 
 app.post("/api/oauth/callback", async (req: any, res:  any) => {
-  functions.logger.info("/api/oauth/callback", { body: req.body, cookies: req.cookies });
   const { code } = req.body;
   if ( typeof code !== "string") {
     res.status(422).json({error: "code required"});
@@ -521,7 +533,6 @@ app.post("/api/line/revoke", async (req: any, res) => {
 });
 
 app.get("/api/articles/:articleId/attached", async (req, res) => {
-  functions.logger.info("/api/articles/:articleId/attached", { params: req.params });
   const signedUrl = await getArticleAttachedFileSignedUrl(req.params.articleId)
   if (signedUrl) {
     res.json({ url: signedUrl });
@@ -544,7 +555,7 @@ export const api = functions.runWith(runtimeOpts).https.onRequest(app);
 
 export const scheduled = functions.runWith(runtimeOpts)
   .pubsub
-  .schedule("0 16,17,18,19 * * 1-5")
+  .schedule("0 16,17,18 * * 1-5")
   .timeZone("Asia/Tokyo")
   .onRun(async () => {
   const message = await scraping();

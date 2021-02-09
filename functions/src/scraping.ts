@@ -169,7 +169,9 @@ const maxPages = 10;
 type NotifyMessageFunc = (message: string, imageBuffer?: Buffer) => Promise<void>;
 
 export async function notifyPdfAsImages(filePath: string, notifyMessageFunc: NotifyMessageFunc) {
+  console.log(`notifyPdfAsImages: loadPdf: ${filePath}`);
   const pdfDocument = await loadPdf(filePath);
+  console.log(`notifyPdfAsImages: loadPdf finished: ${filePath} (${pdfDocument.numPages}pages)`);
   const pages = Math.min(pdfDocument.numPages, maxPages);
   for(let pageNo = 1; pageNo <= pages; pageNo++) {
     const imageBuffer = await convertPageAsImage(pdfDocument, pageNo, "jpeg");
