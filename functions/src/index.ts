@@ -1,7 +1,6 @@
 import * as fs from "fs";
 import * as functions from "firebase-functions";
 import * as firebase from "firebase-admin";
-import type { Timestamp } from "@google-cloud/firestore";
 import axios from "axios";
 import type { AxiosError } from "axios";
 import * as querystring from "querystring";
@@ -163,6 +162,24 @@ async function revokeToken(userIdAndToken: UserIdAndToken): Promise<TokenStatus>
 
 }
 
+async function notifyMessage(userIdAndToken: UserIdAndToken, message: string, filePath: string | null): Promise<boolean> {
+  const formData = new FormData();
+  formData.append("message", message);
+  if (filePath) {
+    // Bufferをそのまま送ると 500 エラーになった
+    // よくわからないが、一度ファイルに書いて送ると送れた
+    formData.append("imageFile", fs.createReadStream(filePath));
+  }
+  // functions.logger.info("call notify api", { uid: userIdAndToken.uid });
+  const headers = { ...formData.getHeaders(), "Authorization": `Bearer ${userIdAndToken.lineNotifyToken}` };
+  try {
+    await axios.post("https://notify-api.line.me/api/notify", formData, { headers });
+    return true;
+  } catch (error) {
+    functions.logger.error("notify api error", { response: { status: error.response?.status, data: error.response?.data } });
+    return false;
+  }
+}
 async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: string, imageBuffer?: Buffer): Promise<UserIdAndToken[]> {
   functions.logger.info("notifyMessageToAll", { message, bufferLength: imageBuffer?.length });
   const tempFilePath = "/tmp/images/image.jpg";
@@ -170,31 +187,12 @@ async function notifyMessageToAll(userIdAndTokens: UserIdAndToken[], message: st
     // console.log(`image size: ${imageBuffer.byteLength}`);
     await fs.promises.mkdir("/tmp/images", { recursive: true });
     await fs.promises.writeFile(tempFilePath, imageBuffer);
-    functions.logger.info(`imageBuffer.length = ${imageBuffer.length}`);
   }
 
   const succeeded: UserIdAndToken[] = [];
   for(let userIdAndToken of userIdAndTokens) {
-    const formData = new FormData();
-    formData.append("message", message);
-    if (imageBuffer) {
-      // Bufferをそのまま送ると 500 エラーになった
-      // よくわからないが、一度ファイルに書いて送ると送れた
-      formData.append("imageFile", fs.createReadStream(tempFilePath));
-      // formData.append("imageFile", imageBuffer, {
-      //   filename: 'image.jpg',
-      //   contentType: 'image/jpeg',
-      //   knownLength: imageBuffer.length,
-      //   });
-    }
-    functions.logger.info("call notify api", { uid: userIdAndToken.uid });
-    const headers = { ...formData.getHeaders(), "Authorization": `Bearer ${userIdAndToken.lineNotifyToken}` };
-    try {
-      const response = await axios.post("https://notify-api.line.me/api/notify", formData, { headers });
-      functions.logger.info("finishd notify api", { response: response.data });
+    if (await notifyMessage(userIdAndToken, message, imageBuffer ? tempFilePath : null)) {
       succeeded.push(userIdAndToken);
-    } catch (error) {
-      functions.logger.error("notify api error", { response: { status: error.response?.status, data: error.response?.data } });
     }
   }
   return succeeded;
@@ -213,7 +211,7 @@ async function unsentArticles(articles: Article[]): Promise<Article[]> {
 }
 
 async function makeArticleDoc(article: Article, filePath: string | null): Promise<string> {
-  const doc = await db.collection("articles").add({ ...article, filePath });
+  const doc = await db.collection("articles").add({ ...article, filePath, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
   return doc.id
 }
 
@@ -372,13 +370,19 @@ async function isActivatedUser(user: firebase.auth.DecodedIdToken): Promise<bool
 async function activateAccount(user: firebase.auth.DecodedIdToken, code: string): Promise<boolean> {
   const docRef = db.collection("activationCodes").doc(code);
   const doc = await docRef.get();
-  if (!doc.exists) return false;
+  if (!doc.exists) {
+    console.log(`code ${code} doesn't exist`);
+    return false;
+  }
   const data = doc.data() as any;
-  if (!data.expires) return false;
-  const expires = data.expires as Timestamp;
-  const now = new Date();
-  if (now > expires.toDate()) return false;
+  console.log(data);
+  if (data.used) return false;
+  // if (!data.expires) return false;
+  // const expires = data.expires as Timestamp;
+  // const now = new Date();
+  // if (now > expires.toDate()) return false;
   await db.collection("activatedUsers").doc(user.uid).set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+  docRef.set({ used: true, userId: user.uid, email: user.email }, { merge: true });
   return true;
 }
 

@@ -61,7 +61,6 @@ export async function convertPageAsImage(pdfDocument: any, pageNo: number, image
     const renderTask = page.render(renderContext);
     return renderTask.promise.then(() => {
       // Convert the canvas to an image buffer.
-      console.log(`convertPageAsImage ${pageNo} toBuffer`);
       const canvas = canvasAndContext.canvas;
       var image = (imageType === "jpeg") ? canvas!.toBuffer("image/jpeg") : canvas!.toBuffer("image/png");
       canvasFactory.destroy(canvasAndContext);
