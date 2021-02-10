@@ -81,7 +81,7 @@ function initUI() {
 }
 
 function updateUI() {
-  // console.log('updateUI:', globalState);
+  console.log('updateUI:', globalState);
   const signInedButtonIds = ['signout-button'];
   const signOutedButtonIds = ['google-auth-button'];
   const oauthableButtonIds = ['line-notify-auth-wrapper'];
@@ -372,6 +372,64 @@ async function storeUserInfo(user: firebase.User) {
   await docRef.set({ email, displayName, providerId }, { merge: true });
 }
 
+async function sleep(time: number): Promise<void> {
+  return new Promise((resolve, _) => {
+      setTimeout(() => {
+          resolve();
+      }, time);
+  });
+}
+
+function showSpinner() {
+  const spinner = document.getElementById("spinner");
+  if (spinner) {
+    console.log("show spinner");
+    spinner.classList.remove("d-none");
+  }
+}
+
+function hideSpinner() {
+  const spinner = document.getElementById("spinner");
+  if (spinner) {
+    console.log("hide spinner");
+    spinner.classList.add("d-none");
+  }
+}
+
+// async function showSppinerWhile(func: () => Promise<void>): Promise<void> {
+//   try
+//   {
+//     showSpinner();
+//     await func();
+//   } finally {
+//     hideSpinner();
+//   }
+// }
+
+async function processOauthCallback() {
+  const params = parseQueryString(window.location.search);
+  if (params.code != null) {
+    if (await createLineNotifyAccessToken()) {
+      await getStatus();
+    } else {
+      alert('LINE連携処理に失敗しました');
+    }
+  } else {
+    await getStatus();
+  }
+  history.replaceState(null, '', '/');
+}
+
+async function showArticle() {
+  const data = await getArticleAttached(window.location.pathname);
+  if (data) {
+    window.location.href = data.url;
+    return;
+  } else {
+    alert("エラーが発生しました");
+  }
+}
+
 async function onAuthorizeFinished(user: firebase.User): Promise<void> {
   globalState.userId = user.uid;
   globalState.userName = user.displayName;
@@ -380,30 +438,15 @@ async function onAuthorizeFinished(user: firebase.User): Promise<void> {
   showGreeting();
 
   if (window.location.pathname === '/oauth/callback') {
-    const params = parseQueryString(window.location.search);
-    if (params.code != null) {
-      if (await createLineNotifyAccessToken()) {
-        await getStatus();
-      } else {
-        alert('LINE連携処理に失敗しました');
-      }
-    } else {
-      await getStatus();
-    }
-    history.replaceState(null, '', '/');
+    await processOauthCallback();
   } else {
     await getStatus();
     console.log("status:", globalState.status);
     if (window.location.pathname.startsWith('/articles/')) {
-      const data = await getArticleAttached(window.location.pathname);
-      if (data) {
-        window.location.href = data.url;
-        return;
-      } else {
-        alert("エラーが発生しました");
-      }
+      await showArticle();
     }
   }
+  hideSpinner();
   updateUI();
 }
 
@@ -412,6 +455,7 @@ function onAuthorizeRequired() {
   if (loadElem) {
     loadElem.textContent = `ログインしてください`;
   }
+  hideSpinner();
   updateUI();
 }
 
@@ -455,6 +499,7 @@ function initAuth() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  showSpinner();
   processInvitationCode();
   initUI();
   initAuth();
