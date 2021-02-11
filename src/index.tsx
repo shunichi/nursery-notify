@@ -5,6 +5,10 @@ import 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 import Cookies from 'js-cookie';
 import axios, { AxiosResponse } from 'axios';
+import { initAuth, signIn, signOut } from "./lib/Auth";
+// import React from "react";
+// import ReactDOM from "react-dom";
+// import { App } from "./components/App";
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -162,7 +166,7 @@ function initAuthButtons() {
   if (signInbutton) {
     signInbutton.addEventListener('click', (e) => {
       e.preventDefault();
-      googleAuth();
+      signIn();
     });
   }
   const signOutbutton = document.getElementById('signout-button');
@@ -466,48 +470,22 @@ function onAuthorizeRequired() {
   updateUI();
 }
 
-function googleAuth() {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  firebase.auth().signInWithRedirect(provider);
+function onSignout() {
+  globalState.userId = null;
+  globalState.userName = null;
+  globalState.status = defaultStatus();
+  updateUI();
 }
 
-function signOut() {
-  firebase.auth().signOut().then(() => {
-    globalState.userId = null;
-    globalState.userName = null;
-    globalState.status = defaultStatus();
-  });
-}
-
-function initAuth() {
-  const timeBegin = Date.now();
-  firebase.auth().getRedirectResult().then((result) => {
-    if (result.credential && result.user) {
-      console.log("getRedirectResult finished");
-      onAuthorizeFinished(result.user);
-    } else {
-      console.log("getRedirectResult returns null credential or user");
-    }
-  }).catch((error) => {
-    console.error("getRedirectResult faild", error);
-  });
-
-  firebase.auth().onAuthStateChanged(function(user) {
-    const timeAuthChanged = Date.now();
-    console.log(`auth check time: ${(timeAuthChanged - timeBegin) / 1000}sec`);
-    if (user) {
-      console.log('already authorized');
-      onAuthorizeFinished(user);
-    } else {
-      console.log('not authorized');
-      onAuthorizeRequired();
-    }
-  });
-}
+const initApp = () => {
+  // const root = document.getElementById("app-root");
+  // ReactDOM.render(<App content="Hello, React-san!" />, root);
+};
 
 document.addEventListener('DOMContentLoaded', () => {
+  initApp();
   showSpinner();
   processInvitationCode();
   initUI();
-  initAuth();
+  initAuth(onAuthorizeFinished, onAuthorizeRequired, onSignout);
 });
