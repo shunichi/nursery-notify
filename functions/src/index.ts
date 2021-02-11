@@ -559,7 +559,7 @@ export const api = functions.runWith(runtimeOpts).https.onRequest(app);
 
 export const scheduled = functions.runWith(runtimeOpts)
   .pubsub
-  .schedule("0 16,17,18 * * 1-5")
+  .schedule("0 16,17,18,19 * * 1-5")
   .timeZone("Asia/Tokyo")
   .onRun(async () => {
   const message = await scraping();
