@@ -16,9 +16,16 @@ const firebaseConfig = {
   measurementId: process.env.FIREBASE_MEASUREMENT_ID,
 };
 
+declare global {
+  interface Window {
+    db: firebase.firestore.Firestore;
+  }
+}
+
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 if (location.hostname === "localhost") {
+  window.db = db;
   db.useEmulator("localhost", 8080);
   // firebase.auth().useEmulator('http://localhost:9099/');
 }

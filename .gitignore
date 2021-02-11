@@ -67,8 +67,10 @@ node_modules/
 
 *-firebase-adminsdk-*.json
 test_data/
+public/*.html
 public/*.js
 public/*.js.map
+public/*.LICENSE.txt
 .runtimeconfig.json
 *.pdf
 tmp/
