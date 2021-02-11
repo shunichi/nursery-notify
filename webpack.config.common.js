@@ -6,7 +6,8 @@ module.exports = {
     entry: './src/index',
     output: {
         path: path.resolve(__dirname, 'public'),
-        filename: '[name].[contenthash].js'
+        filename: '[name].[contenthash].js',
+        publicPath: '/'
     },
     resolve: {
         extensions: ['.ts', '.tsx', '.js', '.json']

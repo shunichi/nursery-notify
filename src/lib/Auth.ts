@@ -29,7 +29,6 @@ export function initAuth(onAuthorized: AuthorizedCallback, onNotAutrhoized: NotA
   firebase.auth().getRedirectResult().then((result) => {
     if (result.credential && result.user) {
       console.log("getRedirectResult finished");
-      onAuthorized(result.user);
     } else {
       console.log("getRedirectResult returns null credential or user");
     }
@@ -41,7 +40,7 @@ export function initAuth(onAuthorized: AuthorizedCallback, onNotAutrhoized: NotA
     const timeAuthChanged = Date.now();
     console.log(`auth check time: ${(timeAuthChanged - timeBegin) / 1000}sec`);
     if (user) {
-      console.log('already authorized');
+      console.log('authorized');
       onAuthorized(user);
     } else {
       console.log('not authorized');
