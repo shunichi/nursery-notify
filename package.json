@@ -7,6 +7,7 @@
     "check": "tsc --noEmit",
     "bundle": "webpack",
     "bundle-dev": "webpack --config webpack.config.development.js",
+    "watch": "webpack --watch --config webpack.config.development.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
