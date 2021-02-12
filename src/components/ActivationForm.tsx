@@ -17,13 +17,18 @@ export const ActivationForm: FunctionComponent<ActivationFormProps> = (props: Ac
     }
   }
 
+  const submit = (e: React.FormEvent<HTMLFormElement>): void => {
+    e.preventDefault();
+    disabledFunc(sendCode);
+  };
+
   return (
     <div className="button-wrapper">
       <div className="text-center mb-2">招待コードを入力してください</div>
-      <div className="d-flex justify-content-center">
+      <form onSubmit={submit} className="d-flex justify-content-center">
         <input id="invitation-code-input" type="text" className="form-control" placeholder="招待コード" disabled={disabled} value={code} onChange={(e) => setCode(e.target.value)} />
-        <button id="invitation-button" className="btn btn-primary text-nowrap" disabled={disabled} onClick={() => disabledFunc(sendCode)}>送信</button>
-      </div>
+        <button type="submit" id="invitation-button" className="btn btn-primary text-nowrap" disabled={disabled || code === ""}>送信</button>
+      </form>
     </div>
   );
 };
