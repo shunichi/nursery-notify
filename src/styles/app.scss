@@ -2,3 +2,44 @@
   text-align: center;
   color: red;
 }
+
+#load {
+  margin-top: 1rem;
+  color: rgba(0,0,0,0.4);
+  text-align: center;
+  font-size: 13px;
+}
+
+#status-heading {
+  font-size: 1.5rem;
+}
+
+.button-wrapper {
+  max-width: 400px;
+  margin: 2rem auto 0;
+  text-align: center;
+}
+
+#message-wrapper {
+  max-width: 400px;
+  margin: 2rem auto;
+}
+
+#message-text-input {
+  margin-right: 1rem;
+}
+
+#line-notify-target {
+  margin-bottom: 1rem;
+}
+
+#invitation-code-input {
+  margin-right: 1rem;
+}
+
+.group-box {
+  margin-top: 1rem;
+  border: 1px solid #6c757d;
+  border-radius: 4px;
+  padding: 1rem;
+}

@@ -1,11 +1,10 @@
 import React, { FunctionComponent } from 'react';
 import firebase from "firebase";
+import { Activation } from "./Activation";
+import { NeedsLineAuth } from "./NeedsLineAuth";
 import { LineAuthorized } from "./LineAuthorized";
 import { Spinner } from "../Spinner";
-import { ActivationForm } from "../ActivationForm"
-import { LineAuthButton } from "../LineAuthButton"
 import { UserStatus } from "../../lib/UserStatus";
-import { parseQueryString } from "../../lib/QueryString";
 
 type ContentSelectorProps = {
   user: firebase.User;
@@ -21,20 +20,13 @@ export const ContentSelector: FunctionComponent<ContentSelectorProps> = (props: 
       case "unknown":
         return <div className="text-center">エラーが発生しました</div>;
       case "noToken":
-        return (
-        <>
-          <div className="text-center">LINE連携してません</div>
-          <div className="button-wrapper"><LineAuthButton /></div>
-        </>
-        );
+        return <NeedsLineAuth />;
       case "valid":
         return <LineAuthorized />;
       default:
         return null;
     }
   } else {
-    const params = parseQueryString(window.location.search);
-    const code = params.invitation || "";
-    return <ActivationForm code={code} />;
+    return <Activation />;
   }
 }

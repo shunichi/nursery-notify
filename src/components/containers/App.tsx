@@ -39,20 +39,19 @@ export const App: FunctionComponent = () => {
   } else if(authStatus.user) {
     if (window.location.pathname === '/oauth/callback') {
       return <OAuthCallbackProcessor />;
-    } else
-    {
+    } else {
       return (<>
-        <div id="load">{authStatus.user.displayName}さんこんにちは</div>
+        <div id="load">{authStatus.user.displayName}さん こんにちは</div>
         <ContentSelector user={authStatus.user} userStatus={userStatus} />
-        <div className="button-wrapper">
+        <div className="button-wrapper mb-4">
           <SignOutButton />
         </div>
       </>);
     }
   } else {
     return (<>
-      <div id="load">ログインしてください</div>;
-      <div className="button-wrapper">
+      <div id="load">ログインしてください</div>
+      <div className="button-wrapper mb-4">
         <SignInButton />
       </div>
     </>);
