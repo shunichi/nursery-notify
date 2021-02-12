@@ -1,4 +1,4 @@
-import firebase from "firebase/";
+import firebase, { db } from "./Firebase";
 
 type AuthorizedCallback = (user: firebase.User) => Promise<void>;
 type NotAuthorizedCallback = () => void;
@@ -8,6 +8,12 @@ type State = {
 };
 
 const state: State = { onSignout: null };
+
+async function storeUserInfo(user: firebase.User) {
+  const docRef = db.collection('users').doc(user.uid);
+  const { email, displayName, providerId } = user;
+  await docRef.set({ email, displayName, providerId }, { merge: true });
+}
 
 export function signIn(): Promise<void> {
   const provider = new firebase.auth.GoogleAuthProvider();
@@ -41,6 +47,7 @@ export function initAuth(onAuthorized: AuthorizedCallback, onNotAutrhoized: NotA
     console.log(`auth check time: ${(timeAuthChanged - timeBegin) / 1000}sec`);
     if (user) {
       console.log('authorized');
+      storeUserInfo(user);
       onAuthorized(user);
     } else {
       console.log('not authorized');
