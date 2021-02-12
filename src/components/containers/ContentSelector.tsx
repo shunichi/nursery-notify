@@ -1,7 +1,7 @@
 import React, { FunctionComponent } from 'react';
 import firebase from "firebase";
+import { LineAuthorized } from "./LineAuthorized";
 import { Spinner } from "../Spinner";
-import { RevokeLineAuthButton } from "../RevokeLineAuthButton"
 import { ActivationForm } from "../ActivationForm"
 import { LineAuthButton } from "../LineAuthButton"
 import { UserStatus } from "../../lib/UserStatus";
@@ -28,12 +28,7 @@ export const ContentSelector: FunctionComponent<ContentSelectorProps> = (props: 
         </>
         );
       case "valid":
-        return (
-          <>
-            <div className="text-center">LINE連携されています</div>;
-            <div className="button-wrapper"><RevokeLineAuthButton /></div>
-          </>
-        );
+        return <LineAuthorized />;
       default:
         return null;
     }
