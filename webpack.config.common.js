@@ -1,4 +1,5 @@
 const path = require('path');
+const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 
@@ -34,6 +35,15 @@ module.exports = {
         ],
     },
     plugins: [
+        new ForkTsCheckerWebpackPlugin({
+            typescript: {
+              diagnosticOptions: {
+                semantic: true,
+                syntactic: true,
+              },
+              mode: "write-references",
+            },
+        }),
         new CleanWebpackPlugin({
             cleanOnceBeforeBuildPatterns: [
                 '**/*',
