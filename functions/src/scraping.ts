@@ -24,7 +24,7 @@ async function fillIn(page: puppeteer.Page, selector: string, value: string) {
   await page.type(selector, value);
 }
 
-async function waitUntilLoad<T>(page: puppeteer.Page, asyncFunc: (page: puppeteer.Page) => Promise<void>) {
+async function waitUntilLoad(page: puppeteer.Page, asyncFunc: (page: puppeteer.Page) => Promise<void>) {
   let loadPromise = page.waitForNavigation({waitUntil: "domcontentloaded"});
   await asyncFunc(page);
   await loadPromise;
