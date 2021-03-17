@@ -32,7 +32,6 @@ const useAuth = () => {
 export const App: FunctionComponent = () => {
   const authStatus = useAuth();
   const userStatus = useUserStatus();
-  console.log('userStatus:', userStatus);
 
   if (authStatus.initializing) {
     return <div id="load">Loading&hellip;</div>;

@@ -31,7 +31,7 @@ const subscribe = (func: StatusChanged): void => {
 }
 
 const unsubscribe = (func: StatusChanged): void => {
-  subscribers = subscribers.filter((f) => f != func);
+  subscribers = subscribers.filter((f) => f !== func);
 }
 
 const fire = (status: StatusApiResponse): void => {
@@ -65,16 +65,19 @@ export async function revokeToken(): Promise<void> {
 
 export const useUserStatus = (): StatusApiResponse => {
   const [userStatus, setUserStatus] = useState(state.userStatus);
+  let mounted = true;
 
   useEffect(() => {
     const updateStatus = (status: StatusApiResponse): void => {
-      console.log(status.oauthStatus.tokenStatus);
-      setUserStatus(status);
+      if (mounted) {
+        setUserStatus(status);
+      }
     }
     subscribe(updateStatus);
 
     return () => {
       unsubscribe(updateStatus);
+      mounted = false;
     };
   }, []);
 
