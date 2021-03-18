@@ -315,8 +315,7 @@ async function storeFileToStorage(filePath: string, name: string, extension: str
 }
 
 function makeMessage(textAndFile: TextAndFile) {
-  const message = (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
-  return [message, textAndFile.url].join("\n");
+  return (textAndFile.title || textAndFile.text) ? [textAndFile.title, textAndFile.text].join("\n") : "保育園からのお知らせです。"
 }
 
 async function sendArticle(userIdAndTokens: UserIdAndToken[], article: Article, textAndFile: TextAndFile): Promise<void> {
@@ -559,7 +558,7 @@ export const api = functions.runWith(runtimeOpts).https.onRequest(app);
 
 export const scheduled = functions.runWith(runtimeOpts)
   .pubsub
-  .schedule("0 16,17,18,19 * * 1-5")
+  .schedule("0 16,17,18,19,20 * * 1-5")
   .timeZone("Asia/Tokyo")
   .onRun(async () => {
   const message = await scraping();
